@@ -1,27 +1,74 @@
+@import "reactflow/dist/style.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: light;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  @apply bg-stone-50 text-stone-900 antialiased;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
   }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-rise {
+  animation: rise 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.animate-slide-in {
+  animation: slide-in-right 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* React Flow polish */
+.react-flow__attribution {
+  @apply opacity-40;
+}
+.react-flow__node {
+  cursor: pointer;
+  /* lets nodes glide when the layout rearranges (isolate mode, new people)
+     instead of teleporting */
+  transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.react-flow.dragging .react-flow__node {
+  transition: none;
+}
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+.react-flow__edge-path {
+  transition: stroke 0.15s ease;
+}
+.react-flow__controls {
+  @apply overflow-hidden rounded-xl shadow-md ring-1 ring-stone-900/5;
+}
+.react-flow__controls-button {
+  @apply border-b border-stone-100 bg-white text-stone-600;
+}
+.react-flow__controls-button:hover {
+  @apply bg-stone-50;
+}
+.react-flow__minimap {
+  @apply rounded-xl shadow-md ring-1 ring-stone-900/5;
 }
