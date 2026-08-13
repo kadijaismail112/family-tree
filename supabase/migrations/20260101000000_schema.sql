@@ -9,8 +9,8 @@
 --   • a relationship's qualifier must be valid for its type
 -- ============================================================================
 
-create extension if not exists "pgcrypto";      -- gen_random_uuid()
-create extension if not exists "moddatetime";   -- updated_at triggers
+create extension if not exists "pgcrypto" with schema extensions;
+create extension if not exists "moddatetime" with schema extensions;
 
 -- ── Enums ───────────────────────────────────────────────────────────────────
 
@@ -263,12 +263,12 @@ create index edits_family_idx on edits (family_id, created_at desc);
 
 -- ── Triggers ────────────────────────────────────────────────────────────────
 
-create trigger profiles_updated      before update on profiles      for each row execute procedure moddatetime (updated_at);
-create trigger families_updated      before update on families      for each row execute procedure moddatetime (updated_at);
-create trigger people_updated        before update on people        for each row execute procedure moddatetime (updated_at);
-create trigger relationships_updated before update on relationships for each row execute procedure moddatetime (updated_at);
-create trigger confirmations_updated before update on confirmations for each row execute procedure moddatetime (updated_at);
-create trigger comments_updated      before update on comments      for each row execute procedure moddatetime (updated_at);
+create trigger profiles_updated      before update on profiles      for each row execute function extensions.moddatetime (updated_at);
+create trigger families_updated      before update on families      for each row execute function extensions.moddatetime (updated_at);
+create trigger people_updated        before update on people        for each row execute function extensions.moddatetime (updated_at);
+create trigger relationships_updated before update on relationships for each row execute function extensions.moddatetime (updated_at);
+create trigger confirmations_updated before update on confirmations for each row execute function extensions.moddatetime (updated_at);
+create trigger comments_updated      before update on comments      for each row execute function extensions.moddatetime (updated_at);
 
 -- A new signup gets a profile automatically, so the app never has to remember.
 create or replace function handle_new_user()
@@ -291,7 +291,7 @@ $$;
 
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute procedure handle_new_user();
+  for each row execute function handle_new_user();
 
 -- Provenance is stamped from the session, and cannot be rewritten afterwards.
 create or replace function stamp_added_by()
@@ -308,9 +308,9 @@ begin
 end;
 $$;
 
-create trigger people_provenance        before insert or update on people        for each row execute procedure stamp_added_by();
-create trigger relationships_provenance before insert or update on relationships for each row execute procedure stamp_added_by();
-create trigger photos_provenance        before insert or update on photos        for each row execute procedure stamp_added_by();
+create trigger people_provenance        before insert or update on people        for each row execute function stamp_added_by();
+create trigger relationships_provenance before insert or update on relationships for each row execute function stamp_added_by();
+create trigger photos_provenance        before insert or update on photos        for each row execute function stamp_added_by();
 
 -- One source of truth for dates: a full date always sets its year, and a
 -- recorded death implies the person is no longer living.
@@ -333,12 +333,16 @@ end;
 $$;
 
 create trigger people_dates before insert or update on people
-  for each row execute procedure normalise_person_dates();
+  for each row execute function normalise_person_dates();
 
 -- The audit trail writes itself, so no client can edit without being recorded.
+-- Owner rights because `edits` has no insert policy: the trigger is the only
+-- thing allowed to write there, and a client still cannot forge a row.
 create or replace function record_person_edit()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   uid uuid := auth.uid();
@@ -392,11 +396,13 @@ end;
 $$;
 
 create trigger people_audit after update on people
-  for each row execute procedure record_person_edit();
+  for each row execute function record_person_edit();
 
 create or replace function record_relationship_edit()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 begin
   if old.type is distinct from new.type then
@@ -419,4 +425,4 @@ end;
 $$;
 
 create trigger relationships_audit after update on relationships
-  for each row execute procedure record_relationship_edit();
+  for each row execute function record_relationship_edit();

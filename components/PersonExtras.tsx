@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { CURRENT_USER_ID } from "@/lib/seed";
 import { fileToDataUrl, timeAgo, userName } from "@/lib/helpers";
 import type { DetailKey, Person, PersonPhoto } from "@/lib/types";
 import { PERSON_DETAIL_FIELDS } from "@/lib/types";
@@ -17,16 +16,16 @@ export function PersonExtras({
   person: Person;
   onSelectPerson: (id: string) => void;
 }) {
-  const { state, setPersonDetail, setPersonVoice, removePhoto, addComment, removeComment } =
+  const { state, currentUser, setPersonDetail, setPersonVoice, removePhoto, addComment, removeComment } =
     useStore();
   const toast = useToast();
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState<EditorTarget | null>(null);
   const [lightbox, setLightbox] = useState<PersonPhoto | null>(null);
 
   useEffect(() => {
-    setMenuOpen(false);
+    setPicking(false);
     setEditing(null);
     setLightbox(null);
   }, [person.id]);
@@ -62,40 +61,41 @@ export function PersonExtras({
         <p className="text-xs font-semibold uppercase tracking-wider text-stone-400">
           More details
         </p>
-        <div className="relative">
-          <button
-            onClick={() => setMenuOpen((o) => !o)}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 transition hover:bg-teal-800/10"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Add info
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <ul className="absolute right-0 z-20 mt-1 max-h-64 w-56 overflow-y-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
-                {menuItems.map((item) => (
-                  <li key={item.key}>
-                    <button
-                      onClick={() => {
-                        setEditing(item.key);
-                        setMenuOpen(false);
-                      }}
-                      className="w-full px-3.5 py-1.5 text-left text-[13px] text-stone-700 transition hover:bg-stone-50 hover:text-teal-900"
-                    >
-                      {item.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setPicking((open) => !open);
+            setEditing(null);
+          }}
+          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 transition hover:bg-teal-800/10"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Add info
+        </button>
       </div>
 
-      {!hasAnything && !editing && (
+      {picking && (
+        <ul className="mb-3 max-h-56 overflow-y-auto rounded-xl border border-stone-200 bg-white py-1 shadow-sm">
+          {menuItems.map((item) => (
+            <li key={item.key}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(item.key);
+                  setPicking(false);
+                }}
+                className="w-full px-3.5 py-2 text-left text-[13px] text-stone-700 transition hover:bg-teal-800/5 hover:text-teal-900"
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!hasAnything && !editing && !picking && (
         <p className="rounded-xl border border-dashed border-stone-200 px-3.5 py-3 text-sm text-stone-400">
           Nothing here yet — add a photo, a story, or where they live.
         </p>
@@ -111,9 +111,14 @@ export function PersonExtras({
       {editing === "comment" && (
         <CommentComposer
           onCancel={() => setEditing(null)}
-          onPost={(text) => {
-            addComment(person.id, person.familyId, text);
-            setEditing(null);
+          onPost={async (text) => {
+            try {
+              await addComment(person.id, person.familyId, text);
+              setEditing(null);
+              toast("Comment added");
+            } catch (err) {
+              toast(err instanceof Error ? err.message : "Couldn't add that comment", "error");
+            }
           }}
         />
       )}
@@ -122,9 +127,14 @@ export function PersonExtras({
           fieldKey={editing}
           initial={person.details?.[editing] ?? ""}
           onCancel={() => setEditing(null)}
-          onSave={(value) => {
-            setPersonDetail(person.id, editing, value);
-            setEditing(null);
+          onSave={async (value) => {
+            try {
+              await setPersonDetail(person.id, editing, value);
+              setEditing(null);
+              toast("Saved");
+            } catch (err) {
+              toast(err instanceof Error ? err.message : "Couldn't save that", "error");
+            }
           }}
         />
       )}
@@ -158,7 +168,11 @@ export function PersonExtras({
       {person.voiceNameUrl && (
         <VoiceRow
           url={person.voiceNameUrl}
-          onRemove={() => setPersonVoice(person.id, null)}
+          onRemove={() => {
+            void setPersonVoice(person.id, null).catch((err) =>
+              toast(err instanceof Error ? err.message : "Couldn't remove that", "error")
+            );
+          }}
         />
       )}
 
@@ -184,7 +198,11 @@ export function PersonExtras({
                       </svg>
                     </button>
                     <button
-                      onClick={() => setPersonDetail(person.id, f.key, null)}
+                      onClick={() => {
+                        void setPersonDetail(person.id, f.key, null).catch((err) =>
+                          toast(err instanceof Error ? err.message : "Couldn't remove that", "error")
+                        );
+                      }}
                       aria-label={`Remove ${f.label}`}
                       className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600"
                     >
@@ -233,9 +251,13 @@ export function PersonExtras({
                       {userName(state, c.userId)}
                       <span className="font-normal text-stone-400">· {timeAgo(c.createdAt)}</span>
                     </span>
-                    {c.userId === CURRENT_USER_ID && (
+                    {c.userId === currentUser?.id && (
                       <button
-                        onClick={() => removeComment(c.id)}
+                        onClick={() => {
+                          void removeComment(c.id).catch((err) =>
+                            toast(err instanceof Error ? err.message : "Couldn't delete that", "error")
+                          );
+                        }}
                         aria-label="Delete comment"
                         className="rounded p-1 text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
                       >
@@ -293,13 +315,18 @@ export function PersonExtras({
                 })}
               </div>
             )}
-            {lightbox.addedById === CURRENT_USER_ID && (
+            {lightbox.addedById === currentUser?.id && (
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={() => {
-                    removePhoto(lightbox.id);
-                    setLightbox(null);
-                    toast("Photo removed", "info");
+                    void removePhoto(lightbox.id)
+                      .then(() => {
+                        setLightbox(null);
+                        toast("Photo removed", "info");
+                      })
+                      .catch((err) =>
+                        toast(err instanceof Error ? err.message : "Couldn't remove that photo", "error")
+                      );
                   }}
                   className="rounded-xl px-3.5 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
                 >
@@ -324,16 +351,23 @@ function FieldEditor({
 }: {
   fieldKey: DetailKey;
   initial: string;
-  onSave: (value: string) => void;
+  onSave: (value: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const def = PERSON_DETAIL_FIELDS.find((f) => f.key === fieldKey)!;
   const [value, setValue] = useState(initial);
+  const [saving, setSaving] = useState(false);
   return (
     <form
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (value.trim()) onSave(value);
+        if (!value.trim() || saving) return;
+        setSaving(true);
+        try {
+          await onSave(value);
+        } finally {
+          setSaving(false);
+        }
       }}
       className="mb-3 rounded-xl border border-teal-700/30 bg-teal-800/5 p-3"
     >
@@ -362,8 +396,8 @@ function FieldEditor({
         <GhostButton type="button" onClick={onCancel} className="!px-3 !py-1.5 text-xs">
           Cancel
         </GhostButton>
-        <PrimaryButton type="submit" disabled={!value.trim()} className="!px-3 !py-1.5 text-xs">
-          Save
+        <PrimaryButton type="submit" disabled={!value.trim() || saving} className="!px-3 !py-1.5 text-xs">
+          {saving ? "Saving…" : "Save"}
         </PrimaryButton>
       </div>
     </form>
@@ -379,6 +413,7 @@ function PhotoEditor({ person, onDone }: { person: Person; onDone: () => void })
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [tagged, setTagged] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
 
   const others = state.people.filter(
     (p) => p.familyId === person.familyId && p.id !== person.id
@@ -474,21 +509,28 @@ function PhotoEditor({ person, onDone }: { person: Person; onDone: () => void })
         </GhostButton>
         <PrimaryButton
           type="button"
-          disabled={!dataUrl}
+          disabled={!dataUrl || saving}
           className="!px-3 !py-1.5 text-xs"
-          onClick={() => {
-            addPhoto({
-              personId: person.id,
-              familyId: person.familyId,
-              dataUrl: dataUrl!,
-              caption,
-              taggedPersonIds: Array.from(tagged),
-            });
-            toast("Photo added");
-            onDone();
+          onClick={async () => {
+            if (!dataUrl || saving) return;
+            setSaving(true);
+            try {
+              await addPhoto({
+                personId: person.id,
+                familyId: person.familyId,
+                dataUrl,
+                caption,
+                taggedPersonIds: Array.from(tagged),
+              });
+              toast("Photo added");
+              onDone();
+            } catch (err) {
+              toast(err instanceof Error ? err.message : "Couldn't add that photo", "error");
+              setSaving(false);
+            }
           }}
         >
-          Add photo
+          {saving ? "Adding…" : "Add photo"}
         </PrimaryButton>
       </div>
     </div>
@@ -502,6 +544,7 @@ function VoiceEditor({ person, onDone }: { person: Person; onDone: () => void })
   const toast = useToast();
   const [recording, setRecording] = useState(false);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -589,15 +632,22 @@ function VoiceEditor({ person, onDone }: { person: Person; onDone: () => void })
         </GhostButton>
         <PrimaryButton
           type="button"
-          disabled={!dataUrl}
+          disabled={!dataUrl || saving}
           className="!px-3 !py-1.5 text-xs"
-          onClick={() => {
-            setPersonVoice(person.id, dataUrl!);
-            toast("Name recording saved");
-            onDone();
+          onClick={async () => {
+            if (!dataUrl || saving) return;
+            setSaving(true);
+            try {
+              await setPersonVoice(person.id, dataUrl);
+              toast("Name recording saved");
+              onDone();
+            } catch (err) {
+              toast(err instanceof Error ? err.message : "Couldn't save that recording", "error");
+              setSaving(false);
+            }
           }}
         >
-          Save recording
+          {saving ? "Saving…" : "Save recording"}
         </PrimaryButton>
       </div>
     </div>
@@ -658,15 +708,22 @@ function CommentComposer({
   onPost,
   onCancel,
 }: {
-  onPost: (text: string) => void;
+  onPost: (text: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
   return (
     <form
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (text.trim()) onPost(text);
+        if (!text.trim() || saving) return;
+        setSaving(true);
+        try {
+          await onPost(text);
+        } finally {
+          setSaving(false);
+        }
       }}
       className="mb-3 rounded-xl border border-teal-700/30 bg-teal-800/5 p-3"
     >
@@ -681,8 +738,8 @@ function CommentComposer({
         <GhostButton type="button" onClick={onCancel} className="!px-3 !py-1.5 text-xs">
           Cancel
         </GhostButton>
-        <PrimaryButton type="submit" disabled={!text.trim()} className="!px-3 !py-1.5 text-xs">
-          Post comment
+        <PrimaryButton type="submit" disabled={!text.trim() || saving} className="!px-3 !py-1.5 text-xs">
+          {saving ? "Posting…" : "Post"}
         </PrimaryButton>
       </div>
     </form>

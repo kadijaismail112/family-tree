@@ -41,12 +41,20 @@ export default function LandingPage() {
       {/* Nav */}
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
         <Logo />
-        <Link
-          href="/dashboard"
-          className="rounded-xl bg-teal-800 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
-        >
-          Open your trees
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/login"
+            className="text-sm font-medium text-stone-600 transition hover:text-stone-900"
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/signup"
+            className="rounded-xl bg-teal-800 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+          >
+            Open your trees
+          </Link>
+        </div>
       </header>
 
       {/* Hero */}
@@ -64,16 +72,16 @@ export default function LandingPage() {
         </p>
         <div className="mt-9 flex items-center justify-center gap-3">
           <Link
-            href="/dashboard"
+            href="/signup"
             className="rounded-xl bg-teal-800 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-teal-900/10 transition hover:bg-teal-700"
           >
             Start your tree
           </Link>
           <Link
-            href="/family/f-rivera"
+            href="/login"
             className="rounded-xl border border-stone-200 bg-white px-6 py-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-100"
           >
-            See a live example
+            Sign in
           </Link>
         </div>
 

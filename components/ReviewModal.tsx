@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { allSuggestions, type Suggestion } from "@/lib/suggestions";
 import { useState } from "react";
-import { Modal, PrimaryButton, useToast } from "./ui";
+import { Modal, PrimaryButton, useAction, useToast } from "./ui";
 
 /**
  * A queue for every assumed connection in the family. Without this the only
@@ -24,6 +24,7 @@ export function ReviewModal({
 }) {
   const { state, addRelationship, dismissSuggestion } = useStore();
   const toast = useToast();
+  const { run, pending } = useAction();
 
   const suggestions = useMemo(
     () =>
@@ -57,14 +58,35 @@ export function ReviewModal({
   // Bulk-confirming asserts every one of these under your name, so it takes
   // a deliberate second press rather than a single click.
   const [armed, setArmed] = useState(false);
-  const confirmAll = () => {
-    suggestions.forEach((s) =>
-      addRelationship(familyId, s.fromPersonId, s.toPersonId, s.type, undefined, {
-        alsoConfirm: true,
-      })
-    );
-    toast(`${suggestions.length} connections added and confirmed by you`);
+  const [busy, setBusy] = useState(false);
+  const confirmAll = async () => {
+    if (busy) return;
+    setBusy(true);
+    const total = suggestions.length;
+    let added = 0;
+    let firstError: string | null = null;
+    for (const s of suggestions) {
+      try {
+        const res = await addRelationship(familyId, s.fromPersonId, s.toPersonId, s.type, undefined, {
+          alsoConfirm: true,
+        });
+        if (res.ok) added++;
+        else firstError ??= res.error ?? null;
+      } catch (err) {
+        firstError ??= err instanceof Error ? err.message : null;
+      }
+    }
+    setBusy(false);
     setArmed(false);
+    // Reporting the whole batch as done when part of it failed would leave
+    // people believing connections exist that don't.
+    if (added === total) {
+      toast(`${total} ${total === 1 ? "connection" : "connections"} added and confirmed by you`);
+    } else if (added === 0) {
+      toast(firstError ?? "Couldn't add those connections", "error");
+    } else {
+      toast(`Added ${added} of ${total}. ${firstError ?? "The rest didn't go through."}`, "error");
+    }
   };
 
   return (
@@ -109,30 +131,39 @@ export function ReviewModal({
                   </span>
                 </button>
                 <button
-                  onClick={() => {
-                    const res = addRelationship(
-                      familyId,
-                      s.fromPersonId,
-                      s.toPersonId,
-                      s.type,
-                      undefined,
-                      { alsoConfirm: true }
-                    );
-                    if (!res.ok) toast(res.error ?? "Couldn't add that", "error");
-                  }}
+                  disabled={pending || busy}
+                  onClick={() =>
+                    void run(
+                      () =>
+                        addRelationship(
+                          familyId,
+                          s.fromPersonId,
+                          s.toPersonId,
+                          s.type,
+                          undefined,
+                          { alsoConfirm: true }
+                        ),
+                      { success: "Connection added", failure: "Couldn't add that" }
+                    )
+                  }
                   aria-label="Confirm"
                   title="Confirm"
-                  className="shrink-0 rounded-lg bg-teal-800 p-1.5 text-white transition hover:bg-teal-700"
+                  className="shrink-0 rounded-lg bg-teal-800 p-1.5 text-white transition hover:bg-teal-700 disabled:opacity-50"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                 </button>
                 <button
-                  onClick={() => dismissSuggestion(s.key)}
+                  disabled={pending || busy}
+                  onClick={() =>
+                    void run(() => dismissSuggestion(familyId, s.key), {
+                      failure: "Couldn't dismiss that",
+                    })
+                  }
                   aria-label="Deny"
                   title="Deny"
-                  className="shrink-0 rounded-lg border border-stone-200 p-1.5 text-stone-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                  className="shrink-0 rounded-lg border border-stone-200 p-1.5 text-stone-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                     <path d="M6 6l12 12M18 6L6 18" />
@@ -162,10 +193,15 @@ export function ReviewModal({
                   </button>
                 )}
                 <PrimaryButton
-                  onClick={() => (armed ? confirmAll() : setArmed(true))}
+                  onClick={() => (armed ? void confirmAll() : setArmed(true))}
+                  disabled={busy || pending}
                   className="!py-2 text-xs"
                 >
-                  {armed ? `Yes, add all ${suggestions.length}` : "Confirm all"}
+                  {busy
+                    ? "Adding…"
+                    : armed
+                      ? `Yes, add all ${suggestions.length}`
+                      : "Confirm all"}
                 </PrimaryButton>
               </div>
             </div>

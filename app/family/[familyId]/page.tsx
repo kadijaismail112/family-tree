@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { CURRENT_USER_ID } from "@/lib/seed";
 import { findPath, personMatch, personMatches, timeAgo } from "@/lib/helpers";
 import { allSuggestions } from "@/lib/suggestions";
 import { CLUSTER_OPTIONS, type ClusterKey } from "@/lib/cluster";
@@ -22,7 +21,16 @@ import { InviteModal } from "@/components/InviteModal";
 import { ReviewModal } from "@/components/ReviewModal";
 import { GlobeView } from "@/components/GlobeView";
 import { RelationshipModal } from "@/components/RelationshipModal";
-import { Avatar, DangerButton, GhostButton, Modal, PrimaryButton, useToast } from "@/components/ui";
+import {
+  Avatar,
+  DangerButton,
+  GhostButton,
+  LoadingScreen,
+  Modal,
+  PrimaryButton,
+  useAction,
+  useToast,
+} from "@/components/ui";
 
 const VIEWS = [
   { key: "tree", label: "Tree" },
@@ -32,7 +40,8 @@ const VIEWS = [
 
 export default function FamilyPage() {
   const { familyId } = useParams<{ familyId: string }>();
-  const { state, hydrated, removeMember } = useStore();
+  const router = useRouter();
+  const { state, hydrated, currentUser, loadError, refresh, removeMember } = useStore();
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [meMode, setMeMode] = useState(false);
@@ -62,12 +71,13 @@ export default function FamilyPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [mobileSearch, setMobileSearch] = useState(false);
   const toast = useToast();
+  const { run } = useAction();
 
   const family = state.families.find((f) => f.id === familyId);
   // the lightest possible moderation: whoever started the tree can remove members
-  const isCreator = family?.createdById === CURRENT_USER_ID;
-  const isMember = state.memberships.some(
-    (m) => m.familyId === familyId && m.userId === CURRENT_USER_ID
+  const isCreator = !!currentUser && family?.createdById === currentUser.id;
+  const isMember = !!currentUser && state.memberships.some(
+    (m) => m.familyId === familyId && m.userId === currentUser.id
   );
   const people = useMemo(
     () => state.people.filter((p) => p.familyId === familyId),
@@ -109,8 +119,8 @@ export default function FamilyPage() {
 
   // your claimed node in this family — anchors the "Me" highlight
   const mePersonId = useMemo(
-    () => people.find((p) => p.accountUserId === CURRENT_USER_ID)?.id ?? null,
-    [people]
+    () => people.find((p) => p.accountUserId === currentUser?.id)?.id ?? null,
+    [people, currentUser?.id]
   );
 
   const pathHighlight: PathHighlight | null = useMemo(() => {
@@ -123,7 +133,30 @@ export default function FamilyPage() {
     return path ? { personIds: path.personIds, relationshipIds: path.relationshipIds } : null;
   }, [meMode, mePersonId, selection, state.relationships, familyId, tracedPath]);
 
-  if (!hydrated) return <div className="h-screen bg-stone-50" />;
+  // Signed out once the store has settled. Middleware normally redirects
+  // first; this keeps the page from waiting on a session that isn't coming.
+  useEffect(() => {
+    if (hydrated && !currentUser) {
+      router.replace(`/login?next=${encodeURIComponent(`/family/${familyId}`)}`);
+    }
+  }, [hydrated, currentUser, familyId, router]);
+
+  if (!hydrated) return <LoadingScreen label="Opening this tree…" />;
+  if (!currentUser) return <LoadingScreen label="Taking you to sign in…" />;
+
+  // Without this, a failed load looks identical to a family that doesn't
+  // exist, and tells the member their own tree is gone.
+  if (loadError) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-stone-50 px-6 text-center">
+        <h1 className="font-display text-2xl font-semibold text-stone-900">
+          Couldn&apos;t load this tree
+        </h1>
+        <p className="max-w-sm text-stone-500">{loadError}</p>
+        <PrimaryButton onClick={() => void refresh()}>Try again</PrimaryButton>
+      </main>
+    );
+  }
 
   if (!family || !isMember) {
     return (
@@ -134,7 +167,7 @@ export default function FamilyPage() {
         <p className="max-w-sm text-stone-500">
           {family
             ? "Only members of this family can see its tree. Ask a relative for an invite link."
-            : "That family doesn't exist — the link may be wrong, or the demo data was reset."}
+            : "That family doesn't exist — the link may be wrong."}
         </p>
         <Link
           href="/dashboard"
@@ -711,7 +744,7 @@ export default function FamilyPage() {
                   <span>
                     <span className="block text-sm font-medium text-stone-800">
                       {u.name}
-                      {u.id === CURRENT_USER_ID && (
+                      {u.id === currentUser?.id && (
                         <span className="ml-1.5 text-[10px] font-semibold uppercase text-stone-400">
                           you
                         </span>
@@ -736,10 +769,13 @@ export default function FamilyPage() {
                         label="Remove"
                         confirmLabel="Remove them?"
                         className="!px-2 !py-1 text-xs"
-                        onConfirm={() => {
-                          removeMember(familyId, u.id);
-                          toast(`${u.name} removed from this family`, "info");
-                        }}
+                        onConfirm={() =>
+                          void run(() => removeMember(familyId, u.id), {
+                            failure: `Couldn't remove ${u.name}`,
+                          }).then((removed) => {
+                            if (removed) toast(`${u.name} removed from this family`, "info");
+                          })
+                        }
                       />
                     )
                   )}

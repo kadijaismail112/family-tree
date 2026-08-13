@@ -13,7 +13,7 @@ create or replace function public.create_family(p_name text)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_family_id uuid;
@@ -198,7 +198,7 @@ begin
     foreach v_parent in array p_parent_ids loop
       insert into relationships (family_id, from_person_id, to_person_id, type, added_by)
       values (p_family_id, v_parent, v_child_id, 'parent_of', auth.uid())
-      on conflict do nothing;
+      on conflict (from_person_id, to_person_id) where type = 'parent_of' do nothing;
     end loop;
 
     return next v_child_id;
@@ -242,10 +242,49 @@ begin
 end;
 $$;
 
+-- ── Peek at an invite without joining ───────────────────────────────────────
+
+-- The join page needs the family name before the caller is a member, which
+-- RLS on invites would otherwise hide. Returns nothing for a bad/revoked/
+-- expired code rather than erroring, so probing doesn't leak existence via
+-- exception type — the empty result is the same either way from the client's
+-- point of view. (A valid code still reveals the family name; that's the
+-- point of sending someone the link.)
+create or replace function public.peek_invite(p_code text)
+returns table (family_id uuid, family_name text, member_count bigint)
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  v invites%rowtype;
+begin
+  select * into v from invites
+  where lower(code) = lower(btrim(p_code));
+
+  if not found or v.revoked then
+    return;
+  end if;
+  if v.expires_at is not null and v.expires_at < now() then
+    return;
+  end if;
+
+  return query
+    select
+      v.family_id,
+      f.name,
+      (select count(*) from memberships m where m.family_id = v.family_id)
+    from families f
+    where f.id = v.family_id;
+end;
+$$;
+
 -- ── Grants ──────────────────────────────────────────────────────────────────
 
 revoke execute on function public.create_family(text)                        from public;
 revoke execute on function public.accept_invite(text)                        from public;
+revoke execute on function public.peek_invite(text)                          from public;
 revoke execute on function public.claim_person(uuid)                         from public;
 revoke execute on function public.remove_member(uuid, uuid)                  from public;
 revoke execute on function public.add_children(uuid, uuid[], jsonb)          from public;
@@ -253,6 +292,7 @@ revoke execute on function public.set_reaction(uuid, confirmation_type)      fro
 
 grant execute on function public.create_family(text)                   to authenticated;
 grant execute on function public.accept_invite(text)                   to authenticated;
+grant execute on function public.peek_invite(text)                     to authenticated;
 grant execute on function public.claim_person(uuid)                    to authenticated;
 grant execute on function public.remove_member(uuid, uuid)             to authenticated;
 grant execute on function public.add_children(uuid, uuid[], jsonb)     to authenticated;

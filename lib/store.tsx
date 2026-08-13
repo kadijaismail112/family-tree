@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -13,26 +14,25 @@ import type {
   DetailKey,
   EditRecord,
   Gender,
-  RelationKind,
   Person,
-  PersonComment,
-  PersonPhoto,
-  Relationship,
+  RelationKind,
   RelationType,
   Store,
   User,
 } from "./types";
-import { buildSeed, CURRENT_USER_ID } from "./seed";
-
-const STORAGE_KEY = "family-tree-mvp-v2";
-
-function uid(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function now() {
-  return new Date().toISOString();
-}
+import { createClient } from "@/lib/supabase/client";
+import { EMPTY_STORE, loadStore } from "@/lib/supabase/load";
+import {
+  emptyToNull,
+  friendlyError,
+  mapPerson,
+  toDbConfirmation,
+  toDbRelationType,
+  yearToDb,
+} from "@/lib/supabase/map";
+import { sourceToBlob, uploadFamilyFile } from "@/lib/supabase/media";
+import { colorFor } from "./helpers";
+import type { Database } from "./database.types";
 
 export interface AddPersonInput {
   name: string;
@@ -42,9 +42,7 @@ export interface AddPersonInput {
   gender?: Gender;
   relation?: {
     anchorPersonId: string;
-    // how the NEW person relates to the anchor
     kind: "parent" | "child" | "spouse" | "sibling";
-    // for kind "child": optionally link a second parent in the same step
     secondParentId?: string;
   };
 }
@@ -52,13 +50,21 @@ export interface AddPersonInput {
 interface StoreApi {
   state: Store;
   hydrated: boolean;
-  currentUser: User;
+  loadError: string | null;
+  currentUser: User | null;
+  refresh: () => Promise<void>;
+  signOut: () => Promise<void>;
 
-  createFamily: (name: string) => string;
-  joinFamilyByCode: (code: string) => { ok: boolean; familyId?: string; error?: string };
-  createInvite: (familyId: string) => string; // returns code
+  createFamily: (name: string) => Promise<string>;
+  joinFamilyByCode: (
+    code: string
+  ) => Promise<{ ok: boolean; familyId?: string; error?: string }>;
+  peekInvite: (
+    code: string
+  ) => Promise<{ familyId: string; familyName: string; memberCount: number } | null>;
+  createInvite: (familyId: string) => Promise<string>;
 
-  addPerson: (familyId: string, input: AddPersonInput) => Person;
+  addPerson: (familyId: string, input: AddPersonInput) => Promise<Person>;
   updatePerson: (
     personId: string,
     patch: Partial<
@@ -74,14 +80,13 @@ interface StoreApi {
         | "notes"
       >
     >
-  ) => void;
-  deletePerson: (personId: string) => void;
-  /** add several children to the same parents in one pass */
+  ) => Promise<void>;
+  deletePerson: (personId: string) => Promise<void>;
   addChildren: (
     familyId: string,
     parentIds: string[],
     children: { name: string; birthYear?: string; gender?: Gender }[]
-  ) => number;
+  ) => Promise<number>;
 
   addRelationship: (
     familyId: string,
@@ -90,263 +95,284 @@ interface StoreApi {
     type: RelationType,
     kind?: RelationKind,
     opts?: { alsoConfirm?: boolean }
-  ) => { ok: boolean; error?: string };
-  /**
-   * Change an existing edge in place so its confirm/dispute history is not
-   * thrown away. Changing the *type* does clear reactions — people endorsed
-   * a different claim — but changing only the qualifier keeps them.
-   */
+  ) => Promise<{ ok: boolean; error?: string }>;
   updateRelationship: (
     relationshipId: string,
     patch: { type?: RelationType; kind?: RelationKind; swap?: boolean }
-  ) => void;
-  deleteRelationship: (relationshipId: string) => void;
-  /** the family creator can remove a member; their contributions remain */
-  removeMember: (familyId: string, userId: string) => void;
+  ) => Promise<void>;
+  deleteRelationship: (relationshipId: string) => Promise<void>;
+  removeMember: (familyId: string, userId: string) => Promise<void>;
+  claimPerson: (personId: string) => Promise<void>;
 
-  // toggle semantics: reacting with your current reaction removes it
-  setReaction: (relationshipId: string, type: ConfirmationType) => void;
-
-  // "additional info" layer
-  setPersonDetail: (personId: string, key: DetailKey, value: string | null) => void;
-  setPersonVoice: (personId: string, dataUrl: string | null) => void;
-  /** set or clear someone's portrait */
-  setPersonPhoto: (personId: string, dataUrl: string | null) => void;
+  setReaction: (relationshipId: string, type: ConfirmationType) => Promise<void>;
+  setPersonDetail: (
+    personId: string,
+    key: DetailKey,
+    value: string | null
+  ) => Promise<void>;
+  setPersonVoice: (personId: string, dataUrl: string | null) => Promise<void>;
+  setPersonPhoto: (personId: string, dataUrl: string | null) => Promise<void>;
   addPhoto: (input: {
     personId: string;
     familyId: string;
     dataUrl: string;
     caption?: string;
     taggedPersonIds: string[];
-  }) => void;
-  removePhoto: (photoId: string) => void;
-  addComment: (personId: string, familyId: string, text: string) => void;
-  removeComment: (commentId: string) => void;
-
-  // deny an assumed connection so it stops being offered
-  dismissSuggestion: (key: string) => void;
-
-  /** every recorded change to a person or edge, newest first */
+  }) => Promise<void>;
+  removePhoto: (photoId: string) => Promise<void>;
+  addComment: (personId: string, familyId: string, text: string) => Promise<void>;
+  removeComment: (commentId: string) => Promise<void>;
+  dismissSuggestion: (familyId: string, key: string) => Promise<void>;
   editsFor: (entityId: string) => EditRecord[];
-
-  resetDemo: () => void;
 }
 
 const StoreContext = createContext<StoreApi | null>(null);
 
-/**
- * Demo families added to the seed after someone already has saved state
- * would otherwise never appear — the seed only ever applies to a fresh
- * install. Pull in whole families that are missing, and touch nothing that
- * is already here, so anything the user has built (or deliberately deleted)
- * survives untouched.
- */
-function mergeNewSeedFamilies(saved: Store): Store {
-  const seed = buildSeed();
-  const known = new Set(saved.families.map((f) => f.id));
-  const missing = seed.families.filter((f) => !known.has(f.id));
-  if (missing.length === 0) return saved;
+// Reached when the thing being edited has been deleted by another member (or
+// in another tab) since this view was rendered. Returning quietly instead
+// would let the caller announce a save that never happened.
+const STALE_VIEW =
+  "That's no longer here — someone may have changed it. Refresh to see the latest.";
 
-  const ids = new Set(missing.map((f) => f.id));
-  const inNew = <T extends { familyId: string }>(rows: T[]) =>
-    rows.filter((r) => ids.has(r.familyId));
-  const knownUsers = new Set(saved.users.map((u) => u.id));
+function requirePerson(people: Person[], personId: string) {
+  const person = people.find((p) => p.id === personId);
+  if (!person) throw new Error(STALE_VIEW);
+  return person;
+}
 
-  return {
-    ...saved,
-    users: [...saved.users, ...seed.users.filter((u) => !knownUsers.has(u.id))],
-    families: [...saved.families, ...missing],
-    memberships: [...saved.memberships, ...inNew(seed.memberships)],
-    invites: [...saved.invites, ...inNew(seed.invites)],
-    people: [...saved.people, ...inNew(seed.people)],
-    relationships: [...saved.relationships, ...inNew(seed.relationships)],
-    photos: [...saved.photos, ...inNew(seed.photos)],
-    comments: [...saved.comments, ...inNew(seed.comments)],
-    edits: saved.edits ?? [],
-  };
+function makeInviteCode(name: string) {
+  const slug = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .split("-")[0]
+    .slice(0, 8);
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${slug || "FAMILY"}-${suffix}`;
 }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<Store>(buildSeed);
+  const [state, setState] = useState<Store>(EMPTY_STORE);
   const [hydrated, setHydrated] = useState(false);
-  const skipPersist = useRef(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [authFallback, setAuthFallback] = useState<User | null>(null);
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient();
+    const next = await loadStore(supabase);
+    setState(next);
+    setLoadError(null);
+  }, []);
+
+  // Who the loaded store belongs to. Supabase re-announces SIGNED_IN whenever
+  // the tab regains focus; without this, coming back to the tab would refetch
+  // the whole tree and flash the canvas for no reason.
+  const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Store;
-        // tolerate states saved before newer collections existed
-        parsed.photos ??= [];
-        parsed.comments ??= [];
-        parsed.edits ??= [];
-        // Birth date used to live in two places. Fold the free-text detail
-        // into the first-class field and keep the year in step, so there is
-        // one answer to "when were they born".
-        parsed.people = parsed.people.map((p) => {
-          const legacy = (p.details as Record<string, string> | undefined)?.birthDate;
-          if (!legacy) return p;
-          const details = { ...(p.details ?? {}) } as Record<string, string>;
-          delete details.birthDate;
-          return {
-            ...p,
-            details: details as Person["details"],
-            birthDate: p.birthDate ?? legacy,
-            birthYear: p.birthYear ?? legacy.slice(0, 4),
-          };
-        });
-        parsed.families = parsed.families.map((f) => ({
-          ...f,
-          createdById: f.createdById ?? CURRENT_USER_ID,
-        }));
-        // v2 keys were bare "parentId>childId"; they now carry a type prefix
-        parsed.dismissedSuggestions = (parsed.dismissedSuggestions ?? []).map((k) =>
-          k.includes("|") ? k : `PARENT_OF|${k}`
-        );
-        setState(mergeNewSeedFamilies(parsed));
+    const supabase = createClient();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED") return;
+      const id = session?.user.id ?? null;
+      setUserId(id);
+      if (!session || !id) {
+        loadedFor.current = null;
+        setState(EMPTY_STORE);
+        setAuthFallback(null);
+        setHydrated(true);
+        return;
       }
-    } catch {
-      // corrupted storage — fall back to seed
-    }
-    setHydrated(true);
+      if (loadedFor.current === id) return;
+      loadedFor.current = id;
+      const user = session.user;
+      const meta = user.user_metadata as { display_name?: string };
+      setAuthFallback({
+        id,
+        name: meta.display_name || user.email?.split("@")[0] || "You",
+        email: user.email ?? "",
+        color: colorFor(id),
+      });
+      loadStore(supabase)
+        .then((next) => {
+          setState(next);
+          setLoadError(null);
+        })
+        .catch((err: Error) => {
+          // Let the next auth event retry rather than leaving the tab stuck
+          // on an error until it is reloaded by hand.
+          loadedFor.current = null;
+          setLoadError(err.message);
+          setState(EMPTY_STORE);
+        })
+        .finally(() => setHydrated(true));
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (skipPersist.current) {
-      skipPersist.current = false;
-      return;
-    }
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // storage full/unavailable — non-fatal in a mock
-    }
-  }, [state, hydrated]);
+  const currentUser = useMemo(() => {
+    if (!userId) return null;
+    return state.users.find((u) => u.id === userId) ?? authFallback;
+  }, [state.users, userId, authFallback]);
 
-  const currentUser =
-    state.users.find((u) => u.id === CURRENT_USER_ID) ?? state.users[0];
-
-  const createFamily = useCallback((name: string) => {
-    const familyId = uid("f");
-    setState((s) => ({
-      ...s,
-      families: [
-        ...s.families,
-        { id: familyId, name, createdAt: now(), createdById: CURRENT_USER_ID },
-      ],
-      memberships: [
-        ...s.memberships,
-        { id: uid("m"), userId: CURRENT_USER_ID, familyId, joinedAt: now() },
-      ],
-      invites: [
-        ...s.invites,
-        {
-          id: uid("inv"),
-          code: makeInviteCode(name),
-          familyId,
-          createdById: CURRENT_USER_ID,
-          createdAt: now(),
-        },
-      ],
-    }));
-    return familyId;
-  }, []);
+  const createFamily = useCallback(
+    async (name: string) => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("create_family", {
+        p_name: name,
+      });
+      if (error || !data) throw new Error(friendlyError(error?.message ?? "Couldn't create that family."));
+      await refresh();
+      return data;
+    },
+    [refresh]
+  );
 
   const joinFamilyByCode = useCallback(
-    (code: string) => {
-      const invite = state.invites.find(
-        (i) => i.code.toLowerCase() === code.trim().toLowerCase()
-      );
-      if (!invite) return { ok: false, error: "No family found for that invite code." };
-      const already = state.memberships.some(
-        (m) => m.userId === CURRENT_USER_ID && m.familyId === invite.familyId
-      );
-      if (already)
-        return { ok: false, error: "You're already a member of that family.", familyId: invite.familyId };
-      setState((s) => ({
-        ...s,
-        memberships: [
-          ...s.memberships,
-          { id: uid("m"), userId: CURRENT_USER_ID, familyId: invite.familyId, joinedAt: now() },
-        ],
-      }));
-      return { ok: true, familyId: invite.familyId };
-    },
-    [state.invites, state.memberships]
-  );
-
-  const createInvite = useCallback(
-    (familyId: string) => {
-      const existing = state.invites.find((i) => i.familyId === familyId);
-      if (existing) return existing.code;
-      const family = state.families.find((f) => f.id === familyId);
-      const code = makeInviteCode(family?.name ?? "family");
-      setState((s) => ({
-        ...s,
-        invites: [
-          ...s.invites,
-          { id: uid("inv"), code, familyId, createdById: CURRENT_USER_ID, createdAt: now() },
-        ],
-      }));
-      return code;
-    },
-    [state.invites, state.families]
-  );
-
-  const addPerson = useCallback((familyId: string, input: AddPersonInput) => {
-    const person: Person = {
-      id: uid("p"),
-      familyId,
-      name: input.name.trim(),
-      birthYear: input.birthYear?.trim() || undefined,
-      deathYear: input.deathYear?.trim() || undefined,
-      notes: input.notes?.trim() || undefined,
-      gender: input.gender,
-      addedById: CURRENT_USER_ID, // server-side provenance in the real app
-      createdAt: now(),
-    };
-    setState((s) => {
-      let relationships = s.relationships;
-      if (input.relation) {
-        const { anchorPersonId, kind, secondParentId } = input.relation;
-        const rel: Relationship = {
-          id: uid("r"),
-          familyId,
-          fromPersonId: kind === "parent" ? person.id : anchorPersonId,
-          toPersonId: kind === "parent" ? anchorPersonId : person.id,
-          type:
-            kind === "spouse"
-              ? "SPOUSE_OF"
-              : kind === "sibling"
-                ? "SIBLING_OF"
-                : "PARENT_OF",
-          addedById: CURRENT_USER_ID,
-          createdAt: now(),
+    async (code: string) => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("accept_invite", {
+        p_code: code.trim(),
+      });
+      if (error || !data) {
+        return {
+          ok: false,
+          error: friendlyError(error?.message ?? "No family found for that invite code."),
         };
-        relationships = [...relationships, rel];
-        if (kind === "child" && secondParentId && secondParentId !== anchorPersonId) {
-          relationships = [
-            ...relationships,
-            {
-              id: uid("r"),
-              familyId,
-              fromPersonId: secondParentId,
-              toPersonId: person.id,
-              type: "PARENT_OF",
-              addedById: CURRENT_USER_ID,
-              createdAt: now(),
-            },
-          ];
-        }
       }
-      return { ...s, people: [...s.people, person], relationships };
+      await refresh();
+      return { ok: true, familyId: data };
+    },
+    [refresh]
+  );
+
+  const peekInvite = useCallback(async (code: string) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("peek_invite", {
+      p_code: code.trim(),
     });
-    return person;
+    // No rows means no such invite. An error means we don't know yet, and the
+    // caller must be able to tell those apart before telling someone their
+    // invite is dead.
+    if (error) throw new Error(friendlyError(error.message));
+    if (!data?.[0]) return null;
+    const row = data[0];
+    return {
+      familyId: row.family_id,
+      familyName: row.family_name,
+      memberCount: Number(row.member_count),
+    };
   }, []);
 
+  const createInvite = useCallback(
+    async (familyId: string) => {
+      const supabase = createClient();
+      const { data: existing } = await supabase
+        .from("invites")
+        .select("code")
+        .eq("family_id", familyId)
+        .eq("revoked", false)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (existing?.code) return existing.code;
+
+      const family = state.families.find((f) => f.id === familyId);
+      let lastError = "Couldn't create an invite code.";
+      for (let i = 0; i < 5; i++) {
+        const code = makeInviteCode(family?.name ?? "family");
+        const { data, error } = await supabase
+          .from("invites")
+          .insert({ family_id: familyId, code, created_by: userId })
+          .select("code")
+          .single();
+        if (!error && data) {
+          await refresh();
+          return data.code;
+        }
+        // Only a code collision is worth another spin of the loop; anything
+        // else will fail identically five times and hide the real reason.
+        if (error && error.code !== "23505") {
+          throw new Error(friendlyError(error.message, error.code));
+        }
+        if (error) lastError = friendlyError(error.message, error.code);
+      }
+      throw new Error(lastError);
+    },
+    [refresh, state.families, userId]
+  );
+
+  const addPerson = useCallback(
+    async (familyId: string, input: AddPersonInput) => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("people")
+        .insert({
+          family_id: familyId,
+          name: input.name.trim(),
+          birth_year: yearToDb(input.birthYear),
+          death_year: yearToDb(input.deathYear),
+          notes: emptyToNull(input.notes),
+          gender: input.gender ?? null,
+        })
+        .select()
+        .single();
+      if (error || !data) throw new Error(friendlyError(error?.message ?? "Couldn't add that person."));
+
+      // The person exists now even if the edge that was supposed to attach
+      // them doesn't. Reporting success regardless would leave someone
+      // floating in the tree with nobody noticing, so the failure is kept and
+      // raised after the refresh — by which point they can see who to connect.
+      let linkFailure: string | null = null;
+      if (input.relation) {
+        const { anchorPersonId, kind, secondParentId } = input.relation;
+        const type: RelationType =
+          kind === "spouse" ? "SPOUSE_OF" : kind === "sibling" ? "SIBLING_OF" : "PARENT_OF";
+        const fromPersonId = kind === "parent" ? data.id : anchorPersonId;
+        const toPersonId = kind === "parent" ? anchorPersonId : data.id;
+        const { error: linkError } = await supabase.from("relationships").insert({
+          family_id: familyId,
+          from_person_id: fromPersonId,
+          to_person_id: toPersonId,
+          type: toDbRelationType(type),
+        });
+        if (linkError) linkFailure = friendlyError(linkError.message, linkError.code);
+
+        if (
+          !linkFailure &&
+          kind === "child" &&
+          secondParentId &&
+          secondParentId !== anchorPersonId
+        ) {
+          const { error: coParentError } = await supabase.from("relationships").insert({
+            family_id: familyId,
+            from_person_id: secondParentId,
+            to_person_id: data.id,
+            type: "parent_of",
+          });
+          if (coParentError) {
+            linkFailure = `${data.name} was added and linked to one parent, but the second parent couldn't be connected: ${friendlyError(coParentError.message, coParentError.code)}`;
+          }
+        }
+      }
+
+      await refresh();
+      if (linkFailure) {
+        throw new Error(
+          linkFailure.includes("second parent")
+            ? linkFailure
+            : `${data.name} was added, but the connection couldn't be saved: ${linkFailure}`
+        );
+      }
+      return mapPerson(data, new Map());
+    },
+    [refresh]
+  );
+
   const updatePerson = useCallback(
-    (
+    async (
       personId: string,
       patch: Partial<
         Pick<
@@ -362,138 +388,61 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         >
       >
     ) => {
-      setState((s) => {
-        const before = s.people.find((p) => p.id === personId);
-        if (!before) return s;
+      const row: Database["public"]["Tables"]["people"]["Update"] = {};
+      if (patch.name !== undefined) row.name = patch.name.trim();
+      if (patch.notes !== undefined) row.notes = emptyToNull(patch.notes);
+      if (patch.gender !== undefined) row.gender = patch.gender ?? null;
+      if (patch.lifeStatus !== undefined) row.life_status = patch.lifeStatus ?? null;
+      if (patch.birthDate !== undefined) row.birth_date = emptyToNull(patch.birthDate);
+      if (patch.deathDate !== undefined) row.death_date = emptyToNull(patch.deathDate);
+      if (patch.birthYear !== undefined) row.birth_year = yearToDb(patch.birthYear);
+      if (patch.deathYear !== undefined) row.death_year = yearToDb(patch.deathYear);
 
-        const clean = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
-        const next: Person = { ...before };
-        if (patch.name !== undefined) next.name = patch.name.trim() || before.name;
-        if (patch.notes !== undefined) next.notes = clean(patch.notes);
-        if (patch.gender !== undefined) next.gender = patch.gender;
-        if (patch.lifeStatus !== undefined) next.lifeStatus = patch.lifeStatus;
-        if (patch.birthDate !== undefined) next.birthDate = clean(patch.birthDate);
-        if (patch.deathDate !== undefined) next.deathDate = clean(patch.deathDate);
-        if (patch.birthYear !== undefined) next.birthYear = clean(patch.birthYear);
-        if (patch.deathYear !== undefined) next.deathYear = clean(patch.deathYear);
-
-        // one source of truth: a full date always wins and sets the year
-        if (next.birthDate) next.birthYear = next.birthDate.slice(0, 4);
-        if (next.deathDate) next.deathYear = next.deathDate.slice(0, 4);
-        // a recorded death implies they are no longer living
-        if (next.deathDate || next.deathYear) next.lifeStatus = "deceased";
-
-        const labels: Record<string, string> = {
-          name: "Name",
-          notes: "Notes",
-          gender: "Gender",
-          lifeStatus: "Status",
-          birthDate: "Birth date",
-          deathDate: "Death date",
-          birthYear: "Birth year",
-          deathYear: "Death year",
-        };
-        const edits: EditRecord[] = [];
-        (Object.keys(labels) as (keyof Person)[]).forEach((key) => {
-          const from = (before[key] ?? "") as string;
-          const to = (next[key] ?? "") as string;
-          if (from === to) return;
-          edits.push({
-            id: uid("ed"),
-            familyId: before.familyId,
-            entity: "person",
-            entityId: personId,
-            field: labels[key as string],
-            from,
-            to,
-            userId: CURRENT_USER_ID,
-            createdAt: now(),
-          });
-        });
-
-        return {
-          ...s,
-          people: s.people.map((p) => (p.id === personId ? next : p)),
-          edits: [...s.edits, ...edits],
-        };
-      });
+      const supabase = createClient();
+      const { error } = await supabase.from("people").update(row).eq("id", personId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
     },
-    []
+    [refresh]
   );
 
   const addChildren = useCallback(
-    (
+    async (
       familyId: string,
       parentIds: string[],
       children: { name: string; birthYear?: string; gender?: Gender }[]
     ) => {
       const rows = children.filter((c) => c.name.trim());
       if (rows.length === 0) return 0;
-      setState((s) => {
-        const people: Person[] = [];
-        const relationships: Relationship[] = [];
-        for (const row of rows) {
-          const child: Person = {
-            id: uid("p"),
-            familyId,
-            name: row.name.trim(),
-            birthYear: row.birthYear?.trim() || undefined,
-            gender: row.gender,
-            addedById: CURRENT_USER_ID,
-            createdAt: now(),
-          };
-          people.push(child);
-          for (const parentId of parentIds) {
-            relationships.push({
-              id: uid("r"),
-              familyId,
-              fromPersonId: parentId,
-              toPersonId: child.id,
-              type: "PARENT_OF",
-              addedById: CURRENT_USER_ID,
-              createdAt: now(),
-            });
-          }
-        }
-        return {
-          ...s,
-          people: [...s.people, ...people],
-          relationships: [...s.relationships, ...relationships],
-        };
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("add_children", {
+        p_family_id: familyId,
+        p_parent_ids: parentIds,
+        p_children: rows.map((c) => ({
+          name: c.name.trim(),
+          birth_year: c.birthYear?.trim() || "",
+          gender: c.gender || "",
+        })),
       });
-      return rows.length;
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+      return data?.length ?? rows.length;
     },
-    []
+    [refresh]
   );
 
-  const deletePerson = useCallback((personId: string) => {
-    setState((s) => {
-      const deadRels = s.relationships.filter(
-        (r) => r.fromPersonId === personId || r.toPersonId === personId
-      );
-      const deadRelIds = new Set(deadRels.map((r) => r.id));
-      return {
-        ...s,
-        people: s.people.filter((p) => p.id !== personId),
-        relationships: s.relationships.filter((r) => !deadRelIds.has(r.id)),
-        confirmations: s.confirmations.filter((c) => !deadRelIds.has(c.relationshipId)),
-        photos: s.photos
-          .filter((ph) => ph.personId !== personId)
-          .map((ph) =>
-            ph.taggedPersonIds.includes(personId)
-              ? { ...ph, taggedPersonIds: ph.taggedPersonIds.filter((id) => id !== personId) }
-              : ph
-          ),
-        comments: s.comments.filter((c) => c.personId !== personId),
-        dismissedSuggestions: s.dismissedSuggestions.filter(
-          (k) => !k.split("|").pop()!.split(">").includes(personId)
-        ),
-      };
-    });
-  }, []);
+  const deletePerson = useCallback(
+    async (personId: string) => {
+      const supabase = createClient();
+      const { error } = await supabase.from("people").delete().eq("id", personId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh]
+  );
 
   const addRelationship = useCallback(
-    (
+    async (
       familyId: string,
       fromPersonId: string,
       toPersonId: string,
@@ -503,269 +452,279 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     ) => {
       if (fromPersonId === toPersonId)
         return { ok: false, error: "Pick two different people." };
-      const dup = state.relationships.some((r) => {
-        if (r.familyId !== familyId) return false;
-        const samePairSameDir =
-          r.fromPersonId === fromPersonId && r.toPersonId === toPersonId;
-        const samePairReversed =
-          r.fromPersonId === toPersonId && r.toPersonId === fromPersonId;
-        if (r.type !== type) return false;
-        if (type === "PARENT_OF") return samePairSameDir;
-        return samePairSameDir || samePairReversed;
-      });
-      if (dup) return { ok: false, error: "That connection already exists." };
-      const relId = uid("r");
-      setState((s) => ({
-        ...s,
-        relationships: [
-          ...s.relationships,
-          {
-            id: relId,
-            familyId,
-            fromPersonId,
-            toPersonId,
-            type,
-            kind,
-            addedById: CURRENT_USER_ID,
-            createdAt: now(),
-          },
-        ],
-        // Asserting a connection *is* backing it, so record the author's own
-        // confirmation. Otherwise a claim you made reads as "+0" — untouched
-        // by anyone, including you.
-        confirmations: opts?.alsoConfirm
-          ? [
-              ...s.confirmations,
-              {
-                id: uid("c"),
-                relationshipId: relId,
-                userId: CURRENT_USER_ID,
-                type: "CONFIRM" as ConfirmationType,
-                createdAt: now(),
-              },
-            ]
-          : s.confirmations,
-      }));
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("relationships")
+        .insert({
+          family_id: familyId,
+          from_person_id: fromPersonId,
+          to_person_id: toPersonId,
+          type: toDbRelationType(type),
+          kind: kind ?? null,
+        })
+        .select("id")
+        .single();
+      if (error || !data) {
+        return { ok: false, error: friendlyError(error?.message ?? "Couldn't create that connection.", error?.code) };
+      }
+      if (opts?.alsoConfirm) {
+        await supabase.rpc("set_reaction", {
+          p_relationship_id: data.id,
+          p_type: "confirm",
+        });
+      }
+      await refresh();
       return { ok: true };
     },
-    [state.relationships]
+    [refresh]
   );
 
   const updateRelationship = useCallback(
-    (
+    async (
       relationshipId: string,
       patch: { type?: RelationType; kind?: RelationKind; swap?: boolean }
     ) => {
-      setState((s) => {
-        const before = s.relationships.find((r) => r.id === relationshipId);
-        if (!before) return s;
-
-        const next: Relationship = { ...before };
-        if (patch.type !== undefined) next.type = patch.type;
-        if (patch.kind !== undefined) next.kind = patch.kind;
-        if (patch.swap) {
-          next.fromPersonId = before.toPersonId;
-          next.toPersonId = before.fromPersonId;
-        }
-
-        const nameOf = (id: string) =>
-          s.people.find((p) => p.id === id)?.name ?? "someone";
-        const label: Record<RelationType, string> = {
-          PARENT_OF: "parent of",
-          SPOUSE_OF: "spouse of",
-          SIBLING_OF: "sibling of",
-        };
-        const edits: EditRecord[] = [];
-        const note = (field: string, from: string, to: string) => {
-          if (from === to) return;
-          edits.push({
-            id: uid("ed"),
-            familyId: before.familyId,
-            entity: "relationship",
-            entityId: relationshipId,
-            field,
-            from,
-            to,
-            userId: CURRENT_USER_ID,
-            createdAt: now(),
-          });
-        };
-        note("Type", label[before.type], label[next.type]);
-        note("Kind", before.kind ?? "", next.kind ?? "");
-        if (patch.swap)
-          note(
-            "Direction",
-            `${nameOf(before.fromPersonId)} → ${nameOf(before.toPersonId)}`,
-            `${nameOf(next.fromPersonId)} → ${nameOf(next.toPersonId)}`
-          );
-
-        // Reactions endorsed a specific claim. Re-pointing the edge or
-        // changing what it asserts invalidates them; a softer qualifier
-        // change does not.
-        const claimChanged = next.type !== before.type || !!patch.swap;
-
-        return {
-          ...s,
-          relationships: s.relationships.map((r) =>
-            r.id === relationshipId ? next : r
-          ),
-          confirmations: claimChanged
-            ? s.confirmations.filter((c) => c.relationshipId !== relationshipId)
-            : s.confirmations,
-          edits: [...s.edits, ...edits],
-        };
-      });
+      const before = state.relationships.find((r) => r.id === relationshipId);
+      if (!before) throw new Error(STALE_VIEW);
+      const row: Database["public"]["Tables"]["relationships"]["Update"] = {};
+      if (patch.type !== undefined) row.type = toDbRelationType(patch.type);
+      if (patch.kind !== undefined) row.kind = patch.kind;
+      if (patch.swap) {
+        row.from_person_id = before.toPersonId;
+        row.to_person_id = before.fromPersonId;
+      }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("relationships")
+        .update(row)
+        .eq("id", relationshipId);
+      if (error) throw new Error(friendlyError(error.message, error.code));
+      await refresh();
     },
-    []
+    [refresh, state.relationships]
   );
 
-  const removeMember = useCallback((familyId: string, userId: string) => {
-    setState((s) => ({
-      ...s,
-      // their memberships go; everything they contributed stays, still
-      // attributed to them, because the provenance trail must not develop holes
-      memberships: s.memberships.filter(
-        (m) => !(m.familyId === familyId && m.userId === userId)
-      ),
-    }));
-  }, []);
+  const removeMember = useCallback(
+    async (familyId: string, memberId: string) => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("remove_member", {
+        p_family_id: familyId,
+        p_user_id: memberId,
+      });
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh]
+  );
 
-  const deleteRelationship = useCallback((relationshipId: string) => {
-    setState((s) => ({
-      ...s,
-      relationships: s.relationships.filter((r) => r.id !== relationshipId),
-      confirmations: s.confirmations.filter((c) => c.relationshipId !== relationshipId),
-    }));
-  }, []);
+  const claimPerson = useCallback(
+    async (personId: string) => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("claim_person", {
+        p_person_id: personId,
+      });
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh]
+  );
 
-  const setReaction = useCallback((relationshipId: string, type: ConfirmationType) => {
-    setState((s) => {
-      const mine = s.confirmations.find(
-        (c) => c.relationshipId === relationshipId && c.userId === CURRENT_USER_ID
-      );
-      let confirmations = s.confirmations;
-      if (mine && mine.type === type) {
-        // toggle off
-        confirmations = confirmations.filter((c) => c.id !== mine.id);
-      } else if (mine) {
-        confirmations = confirmations.map((c) =>
-          c.id === mine.id ? { ...c, type, createdAt: now() } : c
-        );
-      } else {
-        confirmations = [
-          ...confirmations,
-          { id: uid("c"), relationshipId, userId: CURRENT_USER_ID, type, createdAt: now() },
-        ];
-      }
-      return { ...s, confirmations };
-    });
-  }, []);
+  const deleteRelationship = useCallback(
+    async (relationshipId: string) => {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("relationships")
+        .delete()
+        .eq("id", relationshipId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh]
+  );
+
+  const setReaction = useCallback(
+    async (relationshipId: string, type: ConfirmationType) => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("set_reaction", {
+        p_relationship_id: relationshipId,
+        p_type: toDbConfirmation(type),
+      });
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh]
+  );
 
   const setPersonDetail = useCallback(
-    (personId: string, key: DetailKey, value: string | null) => {
-      setState((s) => ({
-        ...s,
-        people: s.people.map((p) => {
-          if (p.id !== personId) return p;
-          const details = { ...(p.details ?? {}) };
-          if (value === null || value.trim() === "") delete details[key];
-          else details[key] = value.trim();
-          return { ...p, details };
-        }),
-      }));
+    async (personId: string, key: DetailKey, value: string | null) => {
+      const person = requirePerson(state.people, personId);
+      const details = { ...(person.details ?? {}) };
+      if (value === null || value.trim() === "") delete details[key];
+      else details[key] = value.trim();
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("people")
+        .update({ details })
+        .eq("id", personId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
     },
-    []
+    [refresh, state.people]
   );
 
-  const setPersonPhoto = useCallback((personId: string, dataUrl: string | null) => {
-    setState((s) => {
-      const before = s.people.find((p) => p.id === personId);
-      if (!before) return s;
-      return {
-        ...s,
-        people: s.people.map((p) =>
-          p.id === personId ? { ...p, photoUrl: dataUrl ?? undefined } : p
-        ),
-        edits: [
-          ...s.edits,
-          {
-            id: uid("ed"),
-            familyId: before.familyId,
-            entity: "person" as const,
-            entityId: personId,
-            field: "Profile picture",
-            from: before.photoUrl ? "a photo" : "",
-            to: dataUrl ? "a photo" : "",
-            userId: CURRENT_USER_ID,
-            createdAt: now(),
-          },
-        ],
-      };
-    });
-  }, []);
+  const setPersonPhoto = useCallback(
+    async (personId: string, dataUrl: string | null) => {
+      const person = requirePerson(state.people, personId);
+      const supabase = createClient();
+      let photo_path: string | null = null;
+      if (dataUrl) {
+        const blob = await sourceToBlob(dataUrl);
+        photo_path = await uploadFamilyFile(
+          supabase,
+          "person-photos",
+          person.familyId,
+          personId,
+          blob
+        );
+      }
+      const { error } = await supabase
+        .from("people")
+        .update({ photo_path })
+        .eq("id", personId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh, state.people]
+  );
 
-  const setPersonVoice = useCallback((personId: string, dataUrl: string | null) => {
-    setState((s) => ({
-      ...s,
-      people: s.people.map((p) =>
-        p.id === personId ? { ...p, voiceNameUrl: dataUrl ?? undefined } : p
-      ),
-    }));
-  }, []);
+  const setPersonVoice = useCallback(
+    async (personId: string, dataUrl: string | null) => {
+      const person = requirePerson(state.people, personId);
+      const supabase = createClient();
+      let voice_name_path: string | null = null;
+      if (dataUrl) {
+        const blob = await sourceToBlob(dataUrl);
+        voice_name_path = await uploadFamilyFile(
+          supabase,
+          "voice-names",
+          person.familyId,
+          personId,
+          blob
+        );
+      }
+      const { error } = await supabase
+        .from("people")
+        .update({ voice_name_path })
+        .eq("id", personId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh, state.people]
+  );
 
   const addPhoto = useCallback(
-    (input: {
+    async (input: {
       personId: string;
       familyId: string;
       dataUrl: string;
       caption?: string;
       taggedPersonIds: string[];
     }) => {
-      const photo: PersonPhoto = {
-        id: uid("ph"),
-        personId: input.personId,
-        familyId: input.familyId,
-        dataUrl: input.dataUrl,
-        caption: input.caption?.trim() || undefined,
-        taggedPersonIds: input.taggedPersonIds.filter((id) => id !== input.personId),
-        addedById: CURRENT_USER_ID,
-        createdAt: now(),
-      };
-      setState((s) => ({ ...s, photos: [...s.photos, photo] }));
+      const supabase = createClient();
+      const blob = await sourceToBlob(input.dataUrl);
+      const storage_path = await uploadFamilyFile(
+        supabase,
+        "person-photos",
+        input.familyId,
+        input.personId,
+        blob
+      );
+      const { data, error } = await supabase
+        .from("photos")
+        .insert({
+          family_id: input.familyId,
+          person_id: input.personId,
+          storage_path,
+          caption: emptyToNull(input.caption),
+        })
+        .select("id")
+        .single();
+      if (error || !data) throw new Error(friendlyError(error?.message ?? "Couldn't save that photo."));
+      const tags = input.taggedPersonIds.filter((id) => id !== input.personId);
+      let tagFailure: string | null = null;
+      if (tags.length > 0) {
+        const { error: tagError } = await supabase
+          .from("photo_tags")
+          .insert(tags.map((person_id) => ({ photo_id: data.id, person_id })));
+        if (tagError) tagFailure = friendlyError(tagError.message, tagError.code);
+      }
+      await refresh();
+      if (tagFailure) {
+        throw new Error(`The photo was saved, but the tags weren't: ${tagFailure}`);
+      }
     },
-    []
+    [refresh]
   );
 
-  const removePhoto = useCallback((photoId: string) => {
-    setState((s) => ({ ...s, photos: s.photos.filter((p) => p.id !== photoId) }));
-  }, []);
+  const removePhoto = useCallback(
+    async (photoId: string) => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("photos")
+        .select("storage_path")
+        .eq("id", photoId)
+        .maybeSingle();
+      const { error } = await supabase.from("photos").delete().eq("id", photoId);
+      if (error) throw new Error(friendlyError(error.message));
+      if (data?.storage_path) {
+        await supabase.storage.from("person-photos").remove([data.storage_path]);
+      }
+      await refresh();
+    },
+    [refresh]
+  );
 
-  const addComment = useCallback((personId: string, familyId: string, text: string) => {
-    const comment: PersonComment = {
-      id: uid("cm"),
-      personId,
-      familyId,
-      userId: CURRENT_USER_ID,
-      text: text.trim(),
-      createdAt: now(),
-    };
-    setState((s) => ({ ...s, comments: [...s.comments, comment] }));
-  }, []);
+  const addComment = useCallback(
+    async (personId: string, familyId: string, text: string) => {
+      if (!userId) return;
+      const supabase = createClient();
+      const { error } = await supabase.from("comments").insert({
+        person_id: personId,
+        family_id: familyId,
+        user_id: userId,
+        body: text.trim(),
+      });
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh, userId]
+  );
 
-  const removeComment = useCallback((commentId: string) => {
-    setState((s) => ({
-      ...s,
-      comments: s.comments.filter((c) => c.id !== commentId),
-    }));
-  }, []);
+  const removeComment = useCallback(
+    async (commentId: string) => {
+      const supabase = createClient();
+      const { error } = await supabase.from("comments").delete().eq("id", commentId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh]
+  );
 
-  const dismissSuggestion = useCallback((key: string) => {
-    setState((s) =>
-      s.dismissedSuggestions.includes(key)
-        ? s
-        : { ...s, dismissedSuggestions: [...s.dismissedSuggestions, key] }
-    );
-  }, []);
+  const dismissSuggestion = useCallback(
+    async (familyId: string, key: string) => {
+      const supabase = createClient();
+      const { error } = await supabase.from("dismissed_suggestions").insert({
+        family_id: familyId,
+        key,
+        dismissed_by: userId,
+      });
+      if (error && error.code !== "23505") {
+        throw new Error(friendlyError(error.message, error.code));
+      }
+      await refresh();
+    },
+    [refresh, userId]
+  );
 
   const editsFor = useCallback(
     (entityId: string) =>
@@ -775,18 +734,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [state.edits]
   );
 
-  const resetDemo = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    skipPersist.current = true;
-    setState(buildSeed());
+  const signOut = useCallback(async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    loadedFor.current = null;
+    setState(EMPTY_STORE);
+    setUserId(null);
+    setAuthFallback(null);
   }, []);
 
   const api: StoreApi = {
     state,
     hydrated,
+    loadError,
     currentUser,
+    refresh,
+    signOut,
     createFamily,
     joinFamilyByCode,
+    peekInvite,
     createInvite,
     addPerson,
     updatePerson,
@@ -796,6 +762,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateRelationship,
     deleteRelationship,
     removeMember,
+    claimPerson,
     setReaction,
     setPersonDetail,
     setPersonVoice,
@@ -806,7 +773,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     removeComment,
     dismissSuggestion,
     editsFor,
-    resetDemo,
   };
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
@@ -816,15 +782,4 @@ export function useStore() {
   const ctx = useContext(StoreContext);
   if (!ctx) throw new Error("useStore must be used inside <StoreProvider>");
   return ctx;
-}
-
-function makeInviteCode(name: string) {
-  const slug = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .split("-")[0]
-    .slice(0, 8);
-  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${slug || "FAMILY"}-${suffix}`;
 }

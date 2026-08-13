@@ -14,7 +14,6 @@ import ReactFlow, {
   type Node,
 } from "reactflow";
 import { useStore } from "@/lib/store";
-import { CURRENT_USER_ID } from "@/lib/seed";
 import { layoutTree, NODE_H, NODE_W } from "@/lib/layout";
 import { layoutClusters, type ClusterKey } from "@/lib/cluster";
 import { layoutIsolated } from "@/lib/isolate";
@@ -88,7 +87,7 @@ function CanvasInner({
   rightInset: number;
   onQuickAdd: (personId: string) => void;
 }) {
-  const { state } = useStore();
+  const { state, currentUser } = useStore();
   const { setCenter, fitView } = useReactFlow();
   const viewW = useFlowStore((s) => s.width);
   const viewH = useFlowStore((s) => s.height);
@@ -108,8 +107,8 @@ function CanvasInner({
   );
 
   const kinship = useMemo(
-    () => computeKinship(people, relationships),
-    [people, relationships]
+    () => computeKinship(people, relationships, currentUser?.id),
+    [people, relationships, currentUser?.id]
   );
 
   const clusterLayout = useMemo(
@@ -176,7 +175,7 @@ function CanvasInner({
           deathYear: p.deathYear,
           addedByName: userName(state, p.addedById).split(" ")[0],
           claimed: !!p.accountUserId,
-          isYou: p.accountUserId === CURRENT_USER_ID,
+          isYou: !!currentUser && p.accountUserId === currentUser.id,
           dimmed,
           marriedIn: !kinship.bloodIds.has(p.id),
           personId: p.id,
@@ -200,6 +199,7 @@ function CanvasInner({
     isolation,
     kinship,
     onQuickAdd,
+    currentUser,
   ]);
 
   const edges: Edge<RelationshipEdgeData>[] = useMemo(() => {
@@ -518,7 +518,7 @@ function CanvasInner({
       return;
     }
     const anchor =
-      people.find((p) => p.accountUserId === CURRENT_USER_ID) ??
+      people.find((p) => p.accountUserId === currentUser?.id) ??
       [...people].sort(
         (a, b) => (positions.get(a.id)?.y ?? 0) - (positions.get(b.id)?.y ?? 0)
       )[0];
@@ -526,7 +526,7 @@ function CanvasInner({
     if (pos) {
       // sit the anchor near the top of the viewport so the generations
       // descending from it are what fills the screen
-      const isRoot = anchor.accountUserId !== CURRENT_USER_ID;
+      const isRoot = anchor.accountUserId !== currentUser?.id;
       // one card is ~190px wide; aim to show three across whatever screen
       const zoom = Math.max(0.45, Math.min(0.9, viewW / 640));
       setCenter(pos.x + NODE_W / 2, pos.y + NODE_H / 2 + (isRoot ? 280 / zoom : 0), {

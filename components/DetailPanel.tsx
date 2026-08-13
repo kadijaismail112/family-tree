@@ -2,8 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { CURRENT_USER_ID } from "@/lib/seed";
-import { fileToDataUrl, formatDateOrYear, lifespan, timeAgo, userName } from "@/lib/helpers";
+import {
+  editFieldLabel,
+  fileToDataUrl,
+  formatDateOrYear,
+  lifespan,
+  timeAgo,
+  userName,
+} from "@/lib/helpers";
 import {
   kindsFor,
   defaultKind,
@@ -15,7 +21,16 @@ import {
 import { suggestionsFor } from "@/lib/suggestions";
 import { computeKinship } from "@/lib/kinship";
 import type { Person, Relationship } from "@/lib/types";
-import { Avatar, DangerButton, Field, GhostButton, inputCls, PrimaryButton, useToast } from "./ui";
+import {
+  Avatar,
+  DangerButton,
+  Field,
+  GhostButton,
+  inputCls,
+  PrimaryButton,
+  useAction,
+  useToast,
+} from "./ui";
 import { PersonExtras } from "./PersonExtras";
 
 export function DetailPanel({
@@ -146,9 +161,10 @@ function PersonDetail({
   onToggleIsolate: (personId: string) => void;
   onCompare: (personId: string) => void;
 }) {
-  const { state, updatePerson, deletePerson, addRelationship, dismissSuggestion, setPersonPhoto } =
+  const { state, currentUser, updatePerson, deletePerson, addRelationship, dismissSuggestion, setPersonPhoto, claimPerson } =
     useStore();
   const toast = useToast();
+  const { run, pending } = useAction();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
     name: "",
@@ -185,15 +201,15 @@ function PersonDetail({
   );
 
   const life = lifespan(person.birthYear, person.deathYear);
-  const isYou = person.accountUserId === CURRENT_USER_ID;
+  const isYou = !!currentUser && person.accountUserId === currentUser.id;
   const claimed = !!person.accountUserId;
   const marriedIn = useMemo(() => {
     const familyPeople = state.people.filter((p) => p.familyId === person.familyId);
     const familyRels = state.relationships.filter(
       (r) => r.familyId === person.familyId
     );
-    return !computeKinship(familyPeople, familyRels).bloodIds.has(person.id);
-  }, [state.people, state.relationships, person.familyId, person.id]);
+    return !computeKinship(familyPeople, familyRels, currentUser?.id).bloodIds.has(person.id);
+  }, [state.people, state.relationships, person.familyId, person.id, currentUser?.id]);
 
   const startEdit = () => {
     setDraft({
@@ -209,14 +225,18 @@ function PersonDetail({
     setEditing(true);
   };
 
-  const saveEdit = () => {
-    updatePerson(person.id, {
-      ...draft,
-      gender: draft.gender || undefined,
-      lifeStatus: draft.lifeStatus || undefined,
-    });
-    setEditing(false);
-    toast("Details updated");
+  const saveEdit = async () => {
+    const saved = await run(
+      () =>
+        updatePerson(person.id, {
+          ...draft,
+          gender: draft.gender || undefined,
+          lifeStatus: draft.lifeStatus || undefined,
+        }),
+      { success: "Details updated" }
+    );
+    // Keep the form open on failure so the typing isn't thrown away.
+    if (saved) setEditing(false);
   };
 
   const relSentence = (r: Relationship) => {
@@ -261,7 +281,20 @@ function PersonDetail({
             {!person.lifeStatus && <Chip tone="stone">Status unknown</Chip>}
             {isYou && <Chip tone="teal">This is you</Chip>}
             {claimed && !isYou && <Chip tone="teal">Has an account</Chip>}
-            {!claimed && <Chip tone="stone">Not signed up yet</Chip>}
+            {!claimed && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  void run(() => claimPerson(person.id), {
+                    success: "This node is now you",
+                  })
+                }
+                className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-600 transition hover:bg-teal-800 hover:text-white disabled:opacity-50"
+              >
+                This is me
+              </button>
+            )}
           </div>
 
           {person.notes && (
@@ -388,26 +421,28 @@ function PersonDetail({
                       </p>
                       <div className="mt-2 flex gap-1.5">
                         <button
-                          onClick={() => {
-                            const res = addRelationship(
-                              person.familyId,
-                              s.fromPersonId,
-                              s.toPersonId,
-                              s.type
-                            );
-                            if (res.ok) {
-                              toast(
-                                s.type === "PARENT_OF"
-                                  ? `${from.name} added as a parent`
-                                  : s.type === "SIBLING_OF"
-                                    ? "Siblings connected"
-                                    : "Partners connected"
-                              );
-                            } else {
-                              toast(res.error ?? "Couldn't add that", "error");
-                            }
-                          }}
-                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-teal-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 active:scale-[0.98]"
+                          disabled={pending}
+                          onClick={() =>
+                            void run(
+                              () =>
+                                addRelationship(
+                                  person.familyId,
+                                  s.fromPersonId,
+                                  s.toPersonId,
+                                  s.type
+                                ),
+                              {
+                                success:
+                                  s.type === "PARENT_OF"
+                                    ? `${from.name} added as a parent`
+                                    : s.type === "SIBLING_OF"
+                                      ? "Siblings connected"
+                                      : "Partners connected",
+                                failure: "Couldn't add that",
+                              }
+                            )
+                          }
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-teal-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 active:scale-[0.98] disabled:opacity-50"
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 6L9 17l-5-5" />
@@ -415,11 +450,13 @@ function PersonDetail({
                           Confirm
                         </button>
                         <button
-                          onClick={() => {
-                            dismissSuggestion(s.key);
-                            toast("Assumption dismissed", "info");
-                          }}
-                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-[0.98]"
+                          disabled={pending}
+                          onClick={() =>
+                            void run(() => dismissSuggestion(person.familyId, s.key), {
+                              failure: "Couldn't dismiss that",
+                            })
+                          }
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-[0.98] disabled:opacity-50"
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                             <path d="M6 6l12 12M18 6L6 18" />
@@ -505,11 +542,15 @@ function PersonDetail({
             <DangerButton
               label="Remove"
               confirmLabel={`Really remove${rels.length ? ` (+${rels.length} connection${rels.length > 1 ? "s" : ""})` : ""}?`}
-              onConfirm={() => {
-                deletePerson(person.id);
-                toast(`${person.name} removed from the tree`, "info");
-                onClose();
-              }}
+              onConfirm={() =>
+                void run(() => deletePerson(person.id), {
+                  failure: `Couldn't remove ${person.name}`,
+                }).then((removed) => {
+                  if (!removed) return;
+                  toast(`${person.name} removed from the tree`, "info");
+                  onClose();
+                })
+              }
             />
           </div>
         </>
@@ -614,8 +655,8 @@ function PersonDetail({
             <GhostButton type="button" onClick={() => setEditing(false)}>
               Cancel
             </GhostButton>
-            <PrimaryButton type="submit" disabled={!draft.name.trim()}>
-              Save
+            <PrimaryButton type="submit" disabled={!draft.name.trim() || pending}>
+              {pending ? "Saving…" : "Save"}
             </PrimaryButton>
           </div>
         </form>
@@ -635,9 +676,10 @@ function RelationshipDetail({
   onSelectPerson: (id: string) => void;
   onClose: () => void;
 }) {
-  const { state, setReaction, deleteRelationship, updateRelationship } = useStore();
+  const { state, currentUser, setReaction, deleteRelationship, updateRelationship } = useStore();
   const [editingRel, setEditingRel] = useState(false);
   const toast = useToast();
+  const { run, pending } = useAction();
 
   const from = state.people.find((p) => p.id === relationship.fromPersonId);
   const to = state.people.find((p) => p.id === relationship.toPersonId);
@@ -646,7 +688,7 @@ function RelationshipDetail({
   );
   const confirms = reactions.filter((r) => r.type === "CONFIRM");
   const disputes = reactions.filter((r) => r.type === "DISPUTE");
-  const mine = reactions.find((r) => r.userId === CURRENT_USER_ID);
+  const mine = reactions.find((r) => r.userId === currentUser?.id);
   const disputed = disputes.length > 0;
 
   const verb =
@@ -700,8 +742,13 @@ function RelationshipDetail({
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => setReaction(relationship.id, "CONFIRM")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+            disabled={pending}
+            onClick={() =>
+              void run(() => setReaction(relationship.id, "CONFIRM"), {
+                failure: "Couldn't record that",
+              })
+            }
+            className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
               mine?.type === "CONFIRM"
                 ? "border-teal-700 bg-teal-800 text-white shadow-sm"
                 : "border-stone-200 bg-white text-teal-800 hover:border-teal-700/40 hover:bg-teal-800/5"
@@ -713,8 +760,13 @@ function RelationshipDetail({
             Confirm
           </button>
           <button
-            onClick={() => setReaction(relationship.id, "DISPUTE")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+            disabled={pending}
+            onClick={() =>
+              void run(() => setReaction(relationship.id, "DISPUTE"), {
+                failure: "Couldn't record that",
+              })
+            }
+            className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
               mine?.type === "DISPUTE"
                 ? "border-red-500 bg-red-600 text-white shadow-sm"
                 : "border-stone-200 bg-white text-red-600 hover:border-red-400/50 hover:bg-red-50"
@@ -754,7 +806,7 @@ function RelationshipDetail({
                   <span className="flex items-center gap-2 text-stone-700">
                     <Avatar name={userName(state, c.userId)} id={c.userId} size={22} />
                     {userName(state, c.userId)}
-                    {c.userId === CURRENT_USER_ID && (
+                    {c.userId === currentUser?.id && (
                       <span className="text-[10px] font-semibold uppercase text-stone-400">you</span>
                     )}
                   </span>
@@ -776,11 +828,14 @@ function RelationshipDetail({
           relationship={relationship}
           reactionCount={reactions.length}
           onCancel={() => setEditingRel(false)}
-          onSave={(patch) => {
-            updateRelationship(relationship.id, patch);
-            setEditingRel(false);
-            toast("Connection updated");
-          }}
+          saving={pending}
+          onSave={(patch) =>
+            void run(() => updateRelationship(relationship.id, patch), {
+              success: "Connection updated",
+            }).then((saved) => {
+              if (saved) setEditingRel(false);
+            })
+          }
         />
       ) : (
         <button
@@ -797,11 +852,15 @@ function RelationshipDetail({
         <DangerButton
           label="Remove connection"
           confirmLabel="Really remove it?"
-          onConfirm={() => {
-            deleteRelationship(relationship.id);
-            toast("Connection removed", "info");
-            onClose();
-          }}
+          onConfirm={() =>
+            void run(() => deleteRelationship(relationship.id), {
+              failure: "Couldn't remove that connection",
+            }).then((removed) => {
+              if (!removed) return;
+              toast("Connection removed", "info");
+              onClose();
+            })
+          }
         />
       </div>
     </div>
@@ -818,10 +877,11 @@ function ProfilePicture({
   onSet,
 }: {
   person: Person;
-  onSet: (personId: string, dataUrl: string | null) => void;
+  onSet: (personId: string, dataUrl: string | null) => Promise<void>;
 }) {
   const { state } = useStore();
   const toast = useToast();
+  const { run, pending } = useAction();
   const fileRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState(false);
 
@@ -831,21 +891,28 @@ function ProfilePicture({
 
   const choose = async (file: File | undefined) => {
     if (!file) return;
+    let dataUrl: string;
     try {
-      // portraits render at 56px, so a small square is plenty and keeps
-      // the browser's storage budget for the photo album
-      onSet(person.id, await fileToDataUrl(file, 320));
-      toast("Profile picture updated");
+      // portraits render at 56px, so a small square is plenty
+      dataUrl = await fileToDataUrl(file, 320);
     } catch {
       toast("Couldn't read that image", "error");
+      return;
     }
+    // The upload is the part that can fail slowly, so the confirmation waits
+    // for it rather than for the file being read off disk.
+    await run(() => onSet(person.id, dataUrl), {
+      success: "Profile picture updated",
+      failure: "Couldn't save that picture",
+    });
   };
 
   return (
     <div className="relative">
       <button
+        disabled={pending}
         onClick={() => (theirPhotos.length ? setPicking((p) => !p) : fileRef.current?.click())}
-        className="group relative block rounded-full"
+        className="group relative block rounded-full disabled:opacity-60"
         title={person.photoUrl ? "Change profile picture" : "Add a profile picture"}
         aria-label={person.photoUrl ? "Change profile picture" : "Add a profile picture"}
       >
@@ -889,9 +956,11 @@ function ProfilePicture({
                     <button
                       key={ph.id}
                       onClick={() => {
-                        onSet(person.id, ph.dataUrl);
                         setPicking(false);
-                        toast("Profile picture updated");
+                        void run(() => onSet(person.id, ph.dataUrl), {
+                          success: "Profile picture updated",
+                          failure: "Couldn't save that picture",
+                        });
                       }}
                       className="aspect-square overflow-hidden rounded-md ring-1 ring-stone-200 transition hover:ring-teal-700"
                     >
@@ -905,9 +974,12 @@ function ProfilePicture({
             {person.photoUrl && (
               <button
                 onClick={() => {
-                  onSet(person.id, null);
                   setPicking(false);
-                  toast("Profile picture removed", "info");
+                  void run(() => onSet(person.id, null), {
+                    failure: "Couldn't remove that picture",
+                  }).then((removed) => {
+                    if (removed) toast("Profile picture removed", "info");
+                  });
                 }}
                 className="mt-1.5 w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] text-red-600 transition hover:bg-red-50"
               >
@@ -929,11 +1001,13 @@ function ProfilePicture({
 function RelationshipEditor({
   relationship,
   reactionCount,
+  saving,
   onSave,
   onCancel,
 }: {
   relationship: Relationship;
   reactionCount: number;
+  saving: boolean;
   onSave: (patch: {
     type?: RelationType;
     kind?: RelationKind;
@@ -1016,9 +1090,10 @@ function RelationshipEditor({
         <PrimaryButton
           type="button"
           className="!px-3 !py-1.5 text-xs"
+          disabled={saving}
           onClick={() => onSave({ type, kind, swap })}
         >
-          Save
+          {saving ? "Saving…" : "Save"}
         </PrimaryButton>
       </div>
     </div>
@@ -1060,7 +1135,7 @@ function EditHistory({ entityId }: { entityId: string }) {
         <ul className="mt-1.5 space-y-1 border-l-2 border-stone-100 pl-2.5">
           {edits.map((e) => (
             <li key={e.id} className="text-[11px] leading-snug text-stone-500">
-              <span className="font-medium text-stone-600">{e.field}</span>{" "}
+              <span className="font-medium text-stone-600">{editFieldLabel(e.field)}</span>{" "}
               {e.from ? (
                 <>
                   <span className="line-through opacity-60">{e.from}</span> →{" "}

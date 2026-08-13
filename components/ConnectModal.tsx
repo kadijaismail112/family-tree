@@ -29,6 +29,7 @@ export function ConnectModal({
   const [kind, setKind] = useState<RelationKind>("biological");
   const [includeCoParent, setIncludeCoParent] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -52,19 +53,39 @@ export function ConnectModal({
 
   const child = people.find((p) => p.id === toId);
 
-  const submit = () => {
-    const res = addRelationship(familyId, fromId, toId, type, kind, { alsoConfirm: true });
-    if (!res.ok) {
-      setError(res.error ?? "Couldn't create that connection.");
-      return;
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await addRelationship(familyId, fromId, toId, type, kind, {
+        alsoConfirm: true,
+      });
+      if (!res.ok) {
+        setError(res.error ?? "Couldn't create that connection.");
+        return;
+      }
+      // The second parent is a separate edge and can fail on its own. Saying
+      // "both parents connected" without checking would be a lie half the time
+      // it matters, so the message follows what actually landed.
+      if (coParent && includeCoParent) {
+        const second = await addRelationship(familyId, coParent.id, toId, "PARENT_OF");
+        if (!second.ok) {
+          setError(
+            `${child?.name ?? "They"} is now connected to ${people.find((p) => p.id === fromId)?.name ?? "the first parent"}, but ${coParent.name} couldn't be added as the second parent: ${second.error ?? "unknown error"}`
+          );
+          return;
+        }
+        toast("Both parents connected — the family can now weigh in");
+      } else {
+        toast("Connection added — the family can now weigh in");
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't create that connection.");
+    } finally {
+      setBusy(false);
     }
-    if (coParent && includeCoParent) {
-      addRelationship(familyId, coParent.id, toId, "PARENT_OF");
-      toast("Both parents connected — the family can now weigh in");
-    } else {
-      toast("Connection added — the family can now weigh in");
-    }
-    onClose();
   };
 
   return (
@@ -77,7 +98,7 @@ export function ConnectModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          void submit();
         }}
         className="space-y-4"
       >
@@ -158,8 +179,8 @@ export function ConnectModal({
           <GhostButton type="button" onClick={onClose}>
             Cancel
           </GhostButton>
-          <PrimaryButton type="submit" disabled={!fromId || !toId || fromId === toId}>
-            Connect
+          <PrimaryButton type="submit" disabled={busy || !fromId || !toId || fromId === toId}>
+            {busy ? "Connecting…" : "Connect"}
           </PrimaryButton>
         </div>
       </form>

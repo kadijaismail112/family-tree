@@ -18,10 +18,26 @@ export function InviteModal({
   const { createInvite } = useStore();
   const toast = useToast();
   const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (open) setCode(createInvite(familyId));
-  }, [open, familyId, createInvite]);
+    if (!open) return;
+    let cancelled = false;
+    setError(null);
+    createInvite(familyId)
+      .then((c) => {
+        if (!cancelled) setCode(c);
+      })
+      .catch((err: Error) => {
+        // Otherwise the code and link sit on "…" forever with no hint that
+        // anything went wrong.
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, familyId, createInvite, attempt]);
 
   const link =
     code && typeof window !== "undefined"
@@ -45,6 +61,20 @@ export function InviteModal({
       subtitle={`Anyone with this link can join ${familyName} and help grow the tree.`}
     >
       <div className="space-y-4">
+        {error && (
+          <div className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+            <p>{error}</p>
+            <button
+              onClick={() => {
+                setError(null);
+                setAttempt((n) => n + 1);
+              }}
+              className="mt-1.5 font-semibold underline"
+            >
+              Try again
+            </button>
+          </div>
+        )}
         <div>
           <p className="mb-1.5 text-sm font-medium text-stone-700">Invite link</p>
           <div className="flex items-center gap-2">

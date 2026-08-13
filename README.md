@@ -5,12 +5,30 @@ every person and every connection permanently records who added it, and members
 can confirm or dispute any claim. There is no single admin who owns the truth.
 
 ```bash
+cp .env.example .env.local   # then fill in your Supabase URL and anon key
 npm install
-npm run dev     # http://localhost:3000
+npm run dev                  # http://localhost:3000
 ```
 
-No database or API keys — everything persists to the browser's `localStorage`,
-so the app runs entirely offline and family details never leave the device.
+Accounts and trees live in [Supabase](https://supabase.com): Auth for signup/login,
+Postgres (with row-level security) for the data, and Storage for photos and
+voice clips. Membership is the privacy boundary — you only see families you
+belong to.
+
+## Local schema
+
+The SQL in `supabase/migrations/` is already applied to the linked project.
+To apply it to a new project:
+
+```bash
+supabase link --project-ref <ref>
+supabase db push
+supabase gen types typescript --linked > lib/database.types.ts
+```
+
+In the Supabase dashboard, add `http://localhost:3000/auth/callback` to
+**Authentication → URL configuration → Redirect URLs**, and set the site URL
+to `http://localhost:3000`.
 
 ## What's in it
 
@@ -48,28 +66,5 @@ so the app runs entirely offline and family details never leave the device.
 comments, and optional fields for city, college, jobs, socials and more. Only
 fields that have been filled in are shown.
 
-## Notable implementation details
-
-- `lib/layout.ts` — generational layout with barycentre relaxation, so parents
-  centre over their children. Each set of co-parents gets its own sibling bar
-  lane, so unrelated branches never merge into one rail.
-- `lib/relationship.ts` — the kinship algorithm, from the two distances to a
-  most-recent common ancestor.
-- `lib/kinship.ts` — blood vs married-in. Step and foster ties are family but
-  don't carry a bloodline; adoptive ones do.
-- `lib/suggestions.ts` — the inference rules behind assumed connections.
-- `lib/geo.ts` — a built-in gazetteer rather than a geocoding API, so home
-  cities are never sent anywhere.
-
-## Demo data
-
-Two seeded families: a small one for the basics, and **Ghebre Family — 7
-generations** (61 people, 1835→2008) used to exercise the layout, the
-suggestion engine and cluster mode at realistic scale. "Reset demo" on the
-dashboard restores them.
-
-## Status
-
-A working prototype with no backend. Auth, a real database and multi-device
-sync are deliberately out of scope — the tradeoff is that clearing browser
-storage loses the tree, and there is no export yet.
+See `supabase/DESIGN.md` for the data model, RLS, and the RPCs that create a
+family or redeem an invite.

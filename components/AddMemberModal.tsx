@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { spousesOf } from "@/lib/helpers";
 import type { Gender, Person } from "@/lib/types";
-import { Field, GhostButton, inputCls, Modal, PrimaryButton, useToast } from "./ui";
+import { Field, GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
 
 const RELATION_OPTIONS = [
   { value: "child", label: "Child of" },
@@ -32,6 +32,7 @@ export function AddMemberModal({
 }) {
   const { state, addPerson } = useStore();
   const toast = useToast();
+  const { run, pending } = useAction();
 
   const [name, setName] = useState("");
   const [birthYear, setBirthYear] = useState("");
@@ -76,28 +77,30 @@ export function AddMemberModal({
   }, [name, people]);
   const secondParentOptions = people.filter((p) => p.id !== anchorId);
 
-  const submit = () => {
-    if (!name.trim()) return;
-    const person = addPerson(familyId, {
-      name,
-      birthYear,
-      deathYear,
-      notes,
-      gender: gender || undefined,
-      relation:
-        canConnect && anchorId
-          ? {
-              anchorPersonId: anchorId,
-              kind,
-              secondParentId:
-                kind === "child" && secondParentId ? secondParentId : undefined,
-            }
-          : undefined,
-    });
-    toast(`Added ${person.name} to the tree`);
-    onAdded?.(person.id);
-    onClose();
-  };
+  const submit = () =>
+    run(async () => {
+      const person = await addPerson(familyId, {
+        name,
+        birthYear,
+        deathYear,
+        notes,
+        gender: gender || undefined,
+        relation:
+          canConnect && anchorId
+            ? {
+                anchorPersonId: anchorId,
+                kind,
+                secondParentId:
+                  kind === "child" && secondParentId ? secondParentId : undefined,
+              }
+            : undefined,
+      });
+      // Only reached when the person and their connection both landed, so a
+      // half-finished add leaves the form open with the reason on screen.
+      toast(`Added ${person.name} to the tree`);
+      onAdded?.(person.id);
+      onClose();
+    }, { failure: "Couldn't add that person" });
 
   return (
     <Modal
@@ -110,7 +113,8 @@ export function AddMemberModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          if (!name.trim()) return;
+          void submit();
         }}
         className="space-y-5"
       >
@@ -251,8 +255,8 @@ export function AddMemberModal({
           <GhostButton type="button" onClick={onClose}>
             Cancel
           </GhostButton>
-          <PrimaryButton type="submit" disabled={!name.trim()}>
-            Add to tree
+          <PrimaryButton type="submit" disabled={!name.trim() || pending}>
+            {pending ? "Adding…" : "Add to tree"}
           </PrimaryButton>
         </div>
       </form>

@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { CURRENT_USER_ID } from "@/lib/seed";
 import { computeProfile } from "@/lib/profile";
 import { timeAgo } from "@/lib/helpers";
 import {
@@ -12,6 +11,7 @@ import {
   Field,
   GhostButton,
   inputCls,
+  LoadingScreen,
   Modal,
   PrimaryButton,
   useToast,
@@ -20,7 +20,7 @@ import {
 const ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
 
 export default function DashboardPage() {
-  const { state, hydrated, currentUser, createFamily, joinFamilyByCode, resetDemo } =
+  const { state, hydrated, currentUser, loadError, createFamily, joinFamilyByCode, signOut, refresh } =
     useStore();
   const router = useRouter();
   const toast = useToast();
@@ -30,35 +30,59 @@ export default function DashboardPage() {
   const [newName, setNewName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
 
   const profile = useMemo(
-    () => computeProfile(state, CURRENT_USER_ID),
-    [state]
+    () => (currentUser ? computeProfile(state, currentUser.id) : null),
+    [state, currentUser]
   );
 
-  if (!hydrated) return <div className="min-h-screen bg-stone-50" />;
+  // Signed out once the store has settled: middleware normally catches this,
+  // but if it ever fails open this page would sit on a spinner forever.
+  useEffect(() => {
+    if (hydrated && !currentUser) router.replace("/login?next=/dashboard");
+  }, [hydrated, currentUser, router]);
 
-  const handleCreate = () => {
+  if (!hydrated) return <LoadingScreen label="Loading your trees…" />;
+  if (!currentUser || !profile) return <LoadingScreen label="Taking you to sign in…" />;
+
+  const handleCreate = async () => {
     const name = newName.trim();
-    if (!name) return;
-    const id = createFamily(name);
-    setCreateOpen(false);
-    setNewName("");
-    toast(`Created “${name}”`);
-    router.push(`/family/${id}`);
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const id = await createFamily(name);
+      setCreateOpen(false);
+      setNewName("");
+      toast(`Created “${name}”`);
+      router.push(`/family/${id}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't create that family", "error");
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleJoin = () => {
-    const res = joinFamilyByCode(joinCode);
-    if (!res.ok) {
-      setJoinError(res.error ?? "Something went wrong.");
-      return;
-    }
-    setJoinOpen(false);
-    setJoinCode("");
+  const handleJoin = async () => {
+    if (joining) return;
+    setJoining(true);
     setJoinError(null);
-    toast("Welcome to the family!");
-    router.push(`/family/${res.familyId}`);
+    try {
+      const res = await joinFamilyByCode(joinCode);
+      if (!res.ok) {
+        setJoinError(res.error ?? "Something went wrong.");
+        return;
+      }
+      setJoinOpen(false);
+      setJoinCode("");
+      toast("Welcome to the family!");
+      router.push(`/family/${res.familyId}`);
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setJoining(false);
+    }
   };
 
   const close = profile.closeCounts;
@@ -73,14 +97,13 @@ export default function DashboardPage() {
             Rootline
           </Link>
           <button
-            onClick={() => {
-              resetDemo();
-              toast("Demo data reset", "info");
+            onClick={async () => {
+              await signOut();
+              router.replace("/");
             }}
             className="text-xs font-medium text-stone-400 transition hover:text-stone-600"
-            title="Restore the original demo data"
           >
-            Reset demo
+            Sign out
           </button>
         </div>
       </header>
@@ -290,12 +313,14 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <p className="mt-10 text-center text-xs text-stone-400">
-          Psst — try joining with the demo code{" "}
-          <code className="rounded bg-stone-200/70 px-1.5 py-0.5 font-mono text-[11px] text-stone-600">
-            REYES-2024
-          </code>
-        </p>
+        {loadError && (
+          <p className="mt-10 text-center text-sm text-red-700">
+            Couldn&apos;t load your trees.{" "}
+            <button className="underline" onClick={() => void refresh()}>
+              Try again
+            </button>
+          </p>
+        )}
       </div>
 
       <Modal
@@ -316,7 +341,9 @@ export default function DashboardPage() {
           </Field>
           <div className="flex justify-end gap-2.5">
             <GhostButton type="button" onClick={() => setCreateOpen(false)}>Cancel</GhostButton>
-            <PrimaryButton type="submit" disabled={!newName.trim()}>Create family</PrimaryButton>
+            <PrimaryButton type="submit" disabled={!newName.trim() || creating}>
+              {creating ? "Creating…" : "Create family"}
+            </PrimaryButton>
           </div>
         </form>
       </Modal>
@@ -327,7 +354,7 @@ export default function DashboardPage() {
         title="Join a family"
         subtitle="Paste the invite code a relative shared with you."
       >
-        <form onSubmit={(e) => { e.preventDefault(); handleJoin(); }} className="space-y-5">
+        <form onSubmit={(e) => { e.preventDefault(); void handleJoin(); }} className="space-y-5">
           <Field label="Invite code">
             <input
               autoFocus
@@ -342,7 +369,9 @@ export default function DashboardPage() {
           )}
           <div className="flex justify-end gap-2.5">
             <GhostButton type="button" onClick={() => setJoinOpen(false)}>Cancel</GhostButton>
-            <PrimaryButton type="submit" disabled={!joinCode.trim()}>Join family</PrimaryButton>
+            <PrimaryButton type="submit" disabled={!joinCode.trim() || joining}>
+              {joining ? "Joining…" : "Join family"}
+            </PrimaryButton>
           </div>
         </form>
       </Modal>

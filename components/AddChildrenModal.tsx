@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { spousesOf } from "@/lib/helpers";
 import type { Gender, Person } from "@/lib/types";
-import { GhostButton, inputCls, Modal, PrimaryButton, useToast } from "./ui";
+import { GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
 
 interface Row {
   name: string;
@@ -34,6 +34,7 @@ export function AddChildrenModal({
 }) {
   const { state, addChildren } = useStore();
   const toast = useToast();
+  const { run, pending } = useAction();
   const [rows, setRows] = useState<Row[]>([blank(), blank(), blank()]);
   const [secondParentId, setSecondParentId] = useState("");
 
@@ -56,17 +57,19 @@ export function AddChildrenModal({
   const submit = () => {
     if (!parentId || filled.length === 0) return;
     const parentIds = secondParentId ? [parentId, secondParentId] : [parentId];
-    const n = addChildren(
-      familyId,
-      parentIds,
-      filled.map((r) => ({
-        name: r.name,
-        birthYear: r.birthYear,
-        gender: r.gender || undefined,
-      }))
-    );
-    toast(`Added ${n} ${n === 1 ? "child" : "children"}`);
-    onClose();
+    return run(async () => {
+      const n = await addChildren(
+        familyId,
+        parentIds,
+        filled.map((r) => ({
+          name: r.name,
+          birthYear: r.birthYear,
+          gender: r.gender || undefined,
+        }))
+      );
+      toast(`Added ${n} ${n === 1 ? "child" : "children"}`);
+      onClose();
+    }, { failure: "Couldn't add those children" });
   };
 
   return (
@@ -164,8 +167,10 @@ export function AddChildrenModal({
         <GhostButton type="button" onClick={onClose}>
           Cancel
         </GhostButton>
-        <PrimaryButton onClick={submit} disabled={filled.length === 0}>
-          Add {filled.length || ""} {filled.length === 1 ? "child" : "children"}
+        <PrimaryButton onClick={() => void submit()} disabled={filled.length === 0 || pending}>
+          {pending
+            ? "Adding…"
+            : `Add ${filled.length || ""} ${filled.length === 1 ? "child" : "children"}`}
         </PrimaryButton>
       </div>
     </Modal>

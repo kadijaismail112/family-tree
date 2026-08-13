@@ -1,6 +1,5 @@
 import type { Person, Relationship } from "./types";
 import { isLineageKind } from "./types";
-import { CURRENT_USER_ID } from "./seed";
 
 /**
  * Who is related by blood, and who married in.
@@ -23,7 +22,8 @@ export interface Kinship {
 
 export function computeKinship(
   people: Person[],
-  relationships: Relationship[]
+  relationships: Relationship[],
+  selfUserId?: string | null
 ): Kinship {
   if (people.length === 0) return { bloodIds: new Set(), referenceId: null };
 
@@ -56,7 +56,9 @@ export function computeKinship(
   };
 
   // reference: your node, else whoever has the most descendants
-  let referenceId = people.find((p) => p.accountUserId === CURRENT_USER_ID)?.id ?? null;
+  let referenceId = selfUserId
+    ? people.find((p) => p.accountUserId === selfUserId)?.id ?? null
+    : null;
   if (!referenceId) {
     let best = -1;
     for (const p of people) {

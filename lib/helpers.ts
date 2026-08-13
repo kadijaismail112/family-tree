@@ -19,6 +19,7 @@ export function colorFor(id: string) {
 }
 
 export function userName(state: Store, userId: string) {
+  if (!userId) return "a former member";
   return state.users.find((u) => u.id === userId)?.name ?? "Unknown member";
 }
 
@@ -65,6 +66,14 @@ export function ageOf(person: Person) {
   if (isNaN(birth)) return null;
   const end = parseInt(person.deathYear ?? "", 10);
   return (isNaN(end) ? new Date().getFullYear() : end) - birth;
+}
+
+/**
+ * The audit trigger records a detail change under its storage key, since the
+ * database has no idea what we call these on screen.
+ */
+export function editFieldLabel(field: string) {
+  return PERSON_DETAIL_FIELDS.find((f) => f.key === field)?.label ?? field;
 }
 
 /**
@@ -154,7 +163,7 @@ export function findPath(
   return { personIds: personIds.reverse(), relationshipIds };
 }
 
-/** Downscale an image file to a data URL that fits comfortably in localStorage. */
+/** Downscale an image before upload, so a phone photo isn't sent at full size. */
 export function fileToDataUrl(file: File, maxDim = 900): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);

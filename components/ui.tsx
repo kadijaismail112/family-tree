@@ -198,6 +198,24 @@ export function DangerButton({
   );
 }
 
+/* ─── Loading ───────────────────────────────────────────────────────── */
+
+/**
+ * Signing in and loading a tree are two round trips, and on a slow connection
+ * a bare background is indistinguishable from a broken page.
+ */
+export function LoadingScreen({ label }: { label: string }) {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-stone-50">
+      <span
+        className="h-6 w-6 animate-spin rounded-full border-2 border-stone-300 border-t-teal-800"
+        aria-hidden
+      />
+      <p className="text-sm text-stone-500">{label}</p>
+    </main>
+  );
+}
+
 /* ─── Toasts ────────────────────────────────────────────────────────── */
 
 interface Toast {
@@ -212,6 +230,63 @@ const ToastContext = createContext<(message: string, kind?: Toast["kind"]) => vo
 
 export function useToast() {
   return useContext(ToastContext);
+}
+
+/**
+ * Every mutation is a round trip now, so each button that triggers one needs
+ * the same three things: no double-submit, a success message only once the
+ * write has actually landed, and the real reason on screen when it hasn't.
+ * Doing that by hand at each call site is how you end up with "Saved" toasts
+ * over failed saves.
+ *
+ * An action may report failure by throwing or by resolving to
+ * `{ ok: false, error }`; both are surfaced the same way.
+ */
+export function useAction() {
+  const toast = useToast();
+  const [pending, setPending] = useState(false);
+  // A ref as well as state: two clicks in one tick would both see `pending`
+  // as false, which is exactly the double-submit we are trying to prevent.
+  const inFlight = useRef(false);
+
+  const run = useCallback(
+    async (
+      action: () => Promise<unknown>,
+      messages?: { success?: string; failure?: string }
+    ): Promise<boolean> => {
+      if (inFlight.current) return false;
+      inFlight.current = true;
+      setPending(true);
+      try {
+        const result = await action();
+        if (
+          result &&
+          typeof result === "object" &&
+          "ok" in result &&
+          (result as { ok: boolean }).ok === false
+        ) {
+          const { error } = result as { error?: string };
+          toast(error ?? messages?.failure ?? "That didn't work.", "error");
+          return false;
+        }
+        if (messages?.success) toast(messages.success);
+        return true;
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : (messages?.failure ?? "That didn't work.");
+        toast(message, "error");
+        return false;
+      } finally {
+        inFlight.current = false;
+        setPending(false);
+      }
+    },
+    [toast]
+  );
+
+  return { run, pending };
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
