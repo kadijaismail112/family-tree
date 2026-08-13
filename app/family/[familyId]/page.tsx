@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { findPath, personMatch, personMatches, timeAgo } from "@/lib/helpers";
@@ -19,7 +19,7 @@ import { AddChildrenModal } from "@/components/AddChildrenModal";
 import { ConnectModal } from "@/components/ConnectModal";
 import { InviteModal } from "@/components/InviteModal";
 import { ReviewModal } from "@/components/ReviewModal";
-import { GlobeView } from "@/components/GlobeView";
+import dynamic from "next/dynamic";
 import { RelationshipModal } from "@/components/RelationshipModal";
 import {
   Avatar,
@@ -31,6 +31,26 @@ import {
   useAction,
   useToast,
 } from "@/components/ui";
+
+/**
+ * The map view drags in d3-geo and the world-atlas land shapes. Statically
+ * imported, every visit to a family paid for that chunk before the tree could
+ * paint — including the visits that never leave the Tree tab.
+ */
+const GlobeView = dynamic(
+  () => import("@/components/GlobeView").then((m) => m.GlobeView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center bg-stone-50">
+        <span
+          className="h-6 w-6 animate-spin rounded-full border-2 border-stone-300 border-t-teal-800"
+          aria-hidden
+        />
+      </div>
+    ),
+  }
+);
 
 const VIEWS = [
   { key: "tree", label: "Tree" },
@@ -107,6 +127,11 @@ export default function FamilyPage() {
       ).length,
     [state.relationships, state.dismissedSuggestions, familyId]
   );
+
+  // Typing re-dims every node on the canvas. The list of results stays on the
+  // live value so the dropdown never lags a letter behind; the canvas takes
+  // the deferred one and repaints when there's a frame to spare.
+  const deferredSearch = useDeferredValue(search);
 
   const searchResults = useMemo(() => {
     const q = search.trim();
@@ -451,7 +476,7 @@ export default function FamilyPage() {
               }
               setSelection(s);
             }}
-            searchQuery={search}
+            searchQuery={deferredSearch}
             focusPersonId={focusPersonId}
             focusNonce={focusNonce}
             highlight={pathHighlight}

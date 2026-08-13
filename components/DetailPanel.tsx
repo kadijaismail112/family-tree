@@ -299,9 +299,10 @@ function PersonDetail({
       Partners: [],
       Children: [],
     };
+    const byId = new Map(familyPeople.map((p) => [p.id, p]));
     for (const r of rels) {
       const otherId = r.fromPersonId === person.id ? r.toPersonId : r.fromPersonId;
-      const other = state.people.find((p) => p.id === otherId);
+      const other = byId.get(otherId);
       const bucket =
         r.type === "SPOUSE_OF"
           ? "Partners"
@@ -315,7 +316,22 @@ function PersonDetail({
     return Object.entries(buckets)
       .filter(([, items]) => items.length > 0)
       .map(([label, items]) => ({ label, items }));
-  }, [rels, person.id, state.people]);
+  }, [rels, person.id, familyPeople]);
+
+  /**
+   * Tallied once per person rather than by filtering the whole confirmations
+   * table twice per connection row, which was the panel's only quadratic step.
+   */
+  const tallies = useMemo(() => {
+    const map = new Map<string, { confirms: number; disputes: number }>();
+    for (const c of state.confirmations) {
+      const t = map.get(c.relationshipId) ?? { confirms: 0, disputes: 0 };
+      if (c.type === "CONFIRM") t.confirms++;
+      else t.disputes++;
+      map.set(c.relationshipId, t);
+    }
+    return map;
+  }, [state.confirmations]);
 
   /** what the collapsed row says, so folding it away loses nothing */
   const connectionSummary = useMemo(
@@ -629,12 +645,10 @@ function PersonDetail({
                     </p>
                     <ul className="space-y-1">
                       {group.items.map(({ rel: r, other }) => {
-                        const confirms = state.confirmations.filter(
-                          (c) => c.relationshipId === r.id && c.type === "CONFIRM"
-                        ).length;
-                        const disputes = state.confirmations.filter(
-                          (c) => c.relationshipId === r.id && c.type === "DISPUTE"
-                        ).length;
+                        const { confirms, disputes } = tallies.get(r.id) ?? {
+                          confirms: 0,
+                          disputes: 0,
+                        };
                         return (
                           <li key={r.id}>
                             <button
