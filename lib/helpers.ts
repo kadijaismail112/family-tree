@@ -101,6 +101,19 @@ export function personMatches(person: Person, query: string): boolean {
   return person.name.toLowerCase().includes(q) || personMatch(person, q) !== null;
 }
 
+/**
+ * The order every person list uses: your own node first, then alphabetical.
+ * Insertion order is meaningless to a reader looking for a name, and it also
+ * made whoever was added last impossible to find in a truncated list.
+ */
+export function sortedPeople(people: Person[], mePersonId?: string | null) {
+  return [...people].sort((a, b) => {
+    if (a.id === mePersonId) return -1;
+    if (b.id === mePersonId) return 1;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  });
+}
+
 /** Ids of everyone recorded as a spouse of this person. */
 export function spousesOf(relationships: Relationship[], personId: string): string[] {
   const out: string[] = [];

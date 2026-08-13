@@ -20,7 +20,12 @@ import { layoutIsolated } from "@/lib/isolate";
 import { personMatches, tallyFor, userName } from "@/lib/helpers";
 import { computeKinship } from "@/lib/kinship";
 import { allSuggestions } from "@/lib/suggestions";
-import { PersonNode, type PersonNodeData } from "./PersonNode";
+import {
+  BLOOD_COLOR,
+  MARRIED_COLOR,
+  PersonNode,
+  type PersonNodeData,
+} from "./PersonNode";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
 import { ClusterBubbleNode, type ClusterBubbleData } from "./ClusterBubbleNode";
 
@@ -567,12 +572,25 @@ function CanvasInner({
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="#d6d3d1" />
       <Controls showInteractive={false} position="bottom-right" className="!bottom-20 sm:!bottom-4" />
+      {/* The detail panel opens over the top-right corner, so a minimap
+          pinned there was invisible for as long as anyone was actually
+          reading someone's details. It steps aside instead. Its nodes carry
+          the same blood/married-in colour as the cards, which is the only
+          thing legible at that size — grey blocks read as a loading state. */}
       <MiniMap
         position="top-right"
         pannable
         zoomable
         className="!hidden lg:!block"
-        nodeColor={() => "#d6d3d1"}
+        style={{ right: rightInset + 16, transition: "right 200ms ease" }}
+        nodeColor={(n) =>
+          n.type === "person"
+            ? (n.data as PersonNodeData).marriedIn
+              ? MARRIED_COLOR
+              : BLOOD_COLOR
+            : "#d6d3d1"
+        }
+        nodeStrokeWidth={0}
         maskColor="rgba(250,250,249,0.7)"
       />
     </ReactFlow>

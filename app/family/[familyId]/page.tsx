@@ -662,6 +662,7 @@ export default function FamilyPage() {
         familyId={familyId}
         people={people}
         anchorPersonId={addAnchorId}
+        mePersonId={mePersonId}
         onAdded={(id) => selectPerson(id)}
       />
       <AddChildrenModal
@@ -670,6 +671,7 @@ export default function FamilyPage() {
         familyId={familyId}
         people={people}
         parentId={childrenParentId}
+        mePersonId={mePersonId}
       />
       <ConnectModal
         open={connectOpen}
@@ -677,6 +679,7 @@ export default function FamilyPage() {
         familyId={familyId}
         people={people}
         initialFromId={connectFromId}
+        mePersonId={mePersonId}
       />
       <InviteModal
         open={inviteOpen}
@@ -696,8 +699,13 @@ export default function FamilyPage() {
         people={people}
         aId={compareAId}
         bId={compareBId}
+        mePersonId={mePersonId}
         onChangeA={setCompareAId}
         onChangeB={setCompareBId}
+        onSwap={() => {
+          setCompareAId(compareBId);
+          setCompareBId(compareAId);
+        }}
         onPickFromTree={(which) => {
           // step aside so the canvas is clear to click on
           setCompareOpen(false);

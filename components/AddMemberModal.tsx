@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { spousesOf } from "@/lib/helpers";
 import type { Gender, Person } from "@/lib/types";
 import { Field, GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
+import { PersonPicker } from "./PersonPicker";
 
 const RELATION_OPTIONS = [
   { value: "child", label: "Child of" },
@@ -22,6 +23,7 @@ export function AddMemberModal({
   people,
   anchorPersonId,
   onAdded,
+  mePersonId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -29,6 +31,7 @@ export function AddMemberModal({
   people: Person[];
   anchorPersonId?: string | null;
   onAdded?: (personId: string) => void;
+  mePersonId?: string | null;
 }) {
   const { state, addPerson } = useStore();
   const toast = useToast();
@@ -108,7 +111,7 @@ export function AddMemberModal({
       onClose={onClose}
       title="Add a family member"
       subtitle="They don't need an account — you're adding their place in the tree."
-      wide
+      size="lg"
     >
       <form
         onSubmit={(e) => {
@@ -191,7 +194,7 @@ export function AddMemberModal({
             <legend className="px-1.5 text-sm font-medium text-stone-700">
               How are they related?
             </legend>
-            <div className="grid grid-cols-[minmax(0,1fr),minmax(0,1.4fr)] gap-2.5">
+            <div className="space-y-2.5">
               <select
                 className={inputCls}
                 value={kind}
@@ -203,36 +206,25 @@ export function AddMemberModal({
                   </option>
                 ))}
               </select>
-              <select
-                className={inputCls}
+              <PersonPicker
+                people={people}
                 value={anchorId}
-                onChange={(e) => setAnchorId(e.target.value)}
-              >
-                {people.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setAnchorId}
+                mePersonId={mePersonId}
+              />
             </div>
             {kind === "child" && secondParentOptions.length > 0 && (
               <div className="mt-2.5">
                 <span className="mb-1 block text-xs font-medium text-stone-600">
                   …and also child of
                 </span>
-                <select
-                  className={inputCls}
+                <PersonPicker
+                  people={secondParentOptions}
                   value={secondParentId}
-                  onChange={(e) => setSecondParentId(e.target.value)}
-                >
-                  <option value="">No second parent (for now)</option>
-                  {secondParentOptions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {p.id === anchorSpouseId ? " (their spouse)" : ""}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSecondParentId}
+                  mePersonId={mePersonId}
+                  noneLabel="No second parent (for now)"
+                />
               </div>
             )}
             <p className="mt-2.5 text-xs leading-relaxed text-stone-500">

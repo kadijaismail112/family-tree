@@ -103,6 +103,7 @@ interface StoreApi {
   deleteRelationship: (relationshipId: string) => Promise<void>;
   removeMember: (familyId: string, userId: string) => Promise<void>;
   claimPerson: (personId: string) => Promise<void>;
+  unclaimPerson: (personId: string) => Promise<void>;
 
   setReaction: (relationshipId: string, type: ConfirmationType) => Promise<void>;
   setPersonDetail: (
@@ -529,6 +530,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [refresh]
   );
 
+  /**
+   * Claiming was one-way, so a mis-tap on "This is me" was permanent unless
+   * you happened to notice you could claim a different node instead. The
+   * `.eq("account_user_id", userId)` guard is the authorisation: it can only
+   * ever release your own claim, never someone else's.
+   */
+  const unclaimPerson = useCallback(
+    async (personId: string) => {
+      if (!userId) throw new Error("You need to be signed in for that.");
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("people")
+        .update({ account_user_id: null })
+        .eq("id", personId)
+        .eq("account_user_id", userId);
+      if (error) throw new Error(friendlyError(error.message));
+      await refresh();
+    },
+    [refresh, userId]
+  );
+
   const deleteRelationship = useCallback(
     async (relationshipId: string) => {
       const supabase = createClient();
@@ -763,6 +785,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     deleteRelationship,
     removeMember,
     claimPerson,
+    unclaimPerson,
     setReaction,
     setPersonDetail,
     setPersonVoice,

@@ -99,7 +99,7 @@ export function ReviewModal({
           ? "These follow from what's already recorded. Nothing is added until you confirm."
           : undefined
       }
-      wide
+      size="lg"
     >
       {suggestions.length === 0 ? (
         <div className="py-6 text-center">

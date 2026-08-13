@@ -12,20 +12,32 @@ import { colorFor, initials } from "@/lib/helpers";
 
 /* ─── Modal ─────────────────────────────────────────────────────────── */
 
+const MODAL_WIDTHS = {
+  md: "sm:max-w-md",
+  lg: "sm:max-w-lg",
+  xl: "sm:max-w-2xl",
+} as const;
+
+/**
+ * The card is a flex column with its own scrolling body, not one long
+ * scrolling block: a title that scrolls away the moment the content is
+ * taller than the screen leaves you reading a half-cropped heading with no
+ * visible close button.
+ */
 export function Modal({
   open,
   onClose,
   title,
   subtitle,
   children,
-  wide,
+  size = "md",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
-  wide?: boolean;
+  size?: keyof typeof MODAL_WIDTHS;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -36,33 +48,47 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // A modal over a scrollable page that still scrolls the page behind it
+  // reads as broken on a phone.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   if (!open) return null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-stone-900/40 backdrop-blur-[2px] p-0 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className={`w-full ${wide ? "sm:max-w-lg" : "sm:max-w-md"} max-h-[92vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl ring-1 ring-stone-900/5 sm:rounded-2xl animate-rise`}
+        className={`flex w-full ${MODAL_WIDTHS[size]} max-h-[92vh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl ring-1 ring-stone-900/5 sm:max-h-[86vh] sm:rounded-2xl animate-rise`}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-stone-100 px-6 py-4">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-100 px-6 py-4">
+          <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold text-stone-900">{title}</h2>
             {subtitle && <p className="mt-0.5 text-sm text-stone-500">{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+            className="-mr-1 shrink-0 rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
       </div>
     </div>
   );
@@ -92,6 +118,108 @@ export function Field({
 
 export const inputCls =
   "w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15";
+
+/**
+ * A row of buttons instead of a `<select>` for the short, closed choices.
+ * In a 340px panel a native select hides its options behind a tap and reads
+ * as "unknown" and "living" being the same kind of thing as a free-text
+ * field; laid out as a row, the choice and the current answer are one glance.
+ */
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  hint,
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+  label?: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      {label && (
+        <span className="mb-1.5 flex items-baseline justify-between text-sm font-medium text-stone-700">
+          {label}
+          {hint && <span className="text-xs font-normal text-stone-400">{hint}</span>}
+        </span>
+      )}
+      <div className="flex gap-1 rounded-xl bg-stone-100 p-1">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={`flex-1 truncate rounded-lg px-2 py-1.5 text-[13px] font-medium transition ${
+              value === o.value
+                ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-900/5"
+                : "text-stone-500 hover:text-stone-700"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A titled section that folds away. Long-lived reference lists (connections,
+ * history) are worth keeping on the page but not worth the whole panel, so
+ * they collapse to a single line that still says what's inside.
+ */
+export function Collapsible({
+  title,
+  count,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  count?: number;
+  /** one line shown while collapsed, so folding it away loses nothing */
+  summary?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="mt-5 overflow-hidden rounded-xl border border-stone-200/80">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition hover:bg-stone-50"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`shrink-0 text-stone-400 transition-transform ${open ? "rotate-90" : ""}`}
+        >
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+        <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-stone-500">
+          {title}
+          {count !== undefined && ` · ${count}`}
+        </span>
+        {!open && summary && (
+          <span className="ml-auto min-w-0 truncate text-xs text-stone-400">{summary}</span>
+        )}
+      </button>
+      {open && <div className="border-t border-stone-100 px-3 py-2.5">{children}</div>}
+    </div>
+  );
+}
 
 export function PrimaryButton({
   children,

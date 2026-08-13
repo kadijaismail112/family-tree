@@ -284,7 +284,7 @@ export function PersonExtras({
             ? `Added by ${userName(state, lightbox.addedById)} · ${timeAgo(lightbox.createdAt)}`
             : undefined
         }
-        wide
+        size="lg"
       >
         {lightbox && (
           <div>

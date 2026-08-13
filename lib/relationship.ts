@@ -12,6 +12,10 @@ export interface RelationResult {
   kind: "self" | "blood" | "spouse" | "marriage" | "distant" | "none";
   /** short form, e.g. "3rd cousins" */
   label: string;
+  /** what A is to B on its own — "3rd cousin", "step-father", "wife" */
+  aTerm?: string;
+  /** what B is to A on its own — the mirror of `aTerm` */
+  bTerm?: string;
   /** "Yosief is a 3rd cousin of Naomi" */
   aToB: string;
   /** "Naomi is a 3rd cousin of Yosief" */
@@ -88,6 +92,84 @@ function niblingTerm(gen: number, gender?: Gender) {
   return `${g}niece or ${g}nephew`;
 }
 
+/**
+ * A blood tie held as structure rather than as a finished string, because
+ * in-law wording has to re-say the same tie in someone else's gender: your
+ * sister's husband is your brother-in-law, not your "sister-in-law".
+ * Every `Kin` reads as "A is B's …".
+ */
+type Kin =
+  | { t: "ancestor"; gen: number }
+  | { t: "descendant"; gen: number }
+  | { t: "sibling"; half: boolean }
+  | { t: "pibling"; gen: number }
+  | { t: "nibling"; gen: number }
+  | { t: "cousin"; degree: number; removed: number };
+
+/** the same tie seen from the other end */
+function invert(kin: Kin): Kin {
+  switch (kin.t) {
+    case "ancestor":
+      return { t: "descendant", gen: kin.gen };
+    case "descendant":
+      return { t: "ancestor", gen: kin.gen };
+    case "pibling":
+      return { t: "nibling", gen: kin.gen };
+    case "nibling":
+      return { t: "pibling", gen: kin.gen };
+    default:
+      return kin;
+  }
+}
+
+function termFor(kin: Kin, gender?: Gender): string {
+  switch (kin.t) {
+    case "ancestor":
+      return ancestorTerm(kin.gen, gender);
+    case "descendant":
+      return descendantTerm(kin.gen, gender);
+    case "sibling":
+      return word(kin.half ? "half-sibling" : "sibling", gender);
+    case "pibling":
+      return piblingTerm(kin.gen, gender);
+    case "nibling":
+      return niblingTerm(kin.gen, gender);
+    case "cousin":
+      return `${ordinal(kin.degree)} cousin${removedSuffix(kin.removed)}`;
+  }
+}
+
+/** the headline form, which goes plural for the symmetric ties */
+function pairLabel(kin: Kin, gender?: Gender) {
+  if (kin.t === "sibling") return kin.half ? "Half-siblings" : "Siblings";
+  if (kin.t === "cousin")
+    return `${ordinal(kin.degree)} cousins${removedSuffix(kin.removed)}`;
+  return capitalise(termFor(kin, gender));
+}
+
+/**
+ * English only hands out "-in-law" to the closest ties: a spouse's aunt is an
+ * "aunt by marriage", never an "aunt-in-law". The two directions are not
+ * mirror images either — the person married to your mother is your
+ * step-father, while your daughter's husband is your son-in-law.
+ */
+
+/** the person married to your {kin} — your sister's husband, your mother's husband */
+function spouseOfKinTerm(kin: Kin, gender?: Gender) {
+  if (kin.t === "ancestor") return `step-${termFor(kin, gender)}`;
+  if (kin.t === "descendant") return `${termFor(kin, gender)}-in-law`;
+  if (kin.t === "sibling") return `${word("sibling", gender)}-in-law`;
+  return `${termFor(kin, gender)} by marriage`;
+}
+
+/** your spouse's {kin} — your husband's mother, your wife's son */
+function kinOfSpouseTerm(kin: Kin, gender?: Gender) {
+  if (kin.t === "ancestor") return `${termFor(kin, gender)}-in-law`;
+  if (kin.t === "descendant") return `step-${termFor(kin, gender)}`;
+  if (kin.t === "sibling") return `${word("sibling", gender)}-in-law`;
+  return `${termFor(kin, gender)} by marriage`;
+}
+
 function buildMaps(relationships: Relationship[]) {
   const parents = new Map<string, string[]>();
   const spouses = new Map<string, string[]>();
@@ -162,15 +244,12 @@ function findChain(relationships: Relationship[], from: string, to: string) {
   return { personIds: personIds.reverse(), relationshipIds };
 }
 
-/** the blood relation only, or null */
-function bloodRelation(
+/** the blood tie only — "A is B's …" — or null when they share no ancestor */
+function bloodKin(
   aId: string,
   bId: string,
-  parents: Map<string, string[]>,
-  genderOf: (id: string) => Gender | undefined = () => undefined
-): { label: string; aTerm: string; bTerm: string; ancestors: string[] } | null {
-  const ga = genderOf(aId);
-  const gb = genderOf(bId);
+  parents: Map<string, string[]>
+): { kin: Kin; ancestors: string[] } | null {
   const da = ancestorDepths(aId, parents);
   const db = ancestorDepths(bId, parents);
 
@@ -190,59 +269,31 @@ function bloodRelation(
     if (d1b === d1 && d2b === d2) ancestors.push(id);
   });
 
-  if (d1 === 0)
-    return {
-      label: ancestorTerm(d2, ga),
-      aTerm: ancestorTerm(d2, ga),
-      bTerm: descendantTerm(d2, gb),
-      ancestors,
-    };
-  if (d2 === 0)
-    return {
-      label: descendantTerm(d1, ga),
-      aTerm: descendantTerm(d1, ga),
-      bTerm: ancestorTerm(d1, gb),
-      ancestors,
-    };
+  if (d1 === 0) return { kin: { t: "ancestor", gen: d2 }, ancestors };
+  if (d2 === 0) return { kin: { t: "descendant", gen: d1 }, ancestors };
 
   if (d1 === 1 && d2 === 1) {
-    const sharedParents = ancestors.length;
     const aParents = (parents.get(aId) ?? []).length;
     const bParents = (parents.get(bId) ?? []).length;
-    const half = sharedParents === 1 && aParents > 1 && bParents > 1;
-    const base = half ? ("half-sibling" as const) : ("sibling" as const);
-    return {
-      label: half ? "Half-siblings" : "Siblings",
-      aTerm: word(base, ga),
-      bTerm: word(base, gb),
-      ancestors,
-    };
+    const half = ancestors.length === 1 && aParents > 1 && bParents > 1;
+    return { kin: { t: "sibling", half }, ancestors };
   }
 
-  if (d1 === 1)
-    return {
-      label: piblingTerm(d2, ga),
-      aTerm: piblingTerm(d2, ga),
-      bTerm: niblingTerm(d2, gb),
-      ancestors,
-    };
-  if (d2 === 1)
-    return {
-      label: niblingTerm(d1, ga),
-      aTerm: niblingTerm(d1, ga),
-      bTerm: piblingTerm(d1, gb),
-      ancestors,
-    };
+  if (d1 === 1) return { kin: { t: "pibling", gen: d2 }, ancestors };
+  if (d2 === 1) return { kin: { t: "nibling", gen: d1 }, ancestors };
 
-  const degree = Math.min(d1, d2) - 1;
-  const removed = Math.abs(d1 - d2);
-  const term = `${ordinal(degree)} cousin${removedSuffix(removed)}`;
   return {
-    label: `${ordinal(degree)} cousins${removedSuffix(removed)}`,
-    aTerm: term,
-    bTerm: term,
+    kin: {
+      t: "cousin",
+      degree: Math.min(d1, d2) - 1,
+      removed: Math.abs(d1 - d2),
+    },
     ancestors,
   };
+}
+
+function withArticle(term: string) {
+  return `${/^[aeiou]/i.test(term) ? "an" : "a"} ${term}`;
 }
 
 export function describeRelationship(
@@ -255,6 +306,8 @@ export function describeRelationship(
   const { parents, spouses } = buildMaps(relationships);
   const genderOf = (id: string) => people.find((p) => p.id === id)?.gender;
   const path = findChain(relationships, aId, bId);
+  const ga = genderOf(aId);
+  const gb = genderOf(bId);
 
   if (aId === bId) {
     return {
@@ -267,15 +320,17 @@ export function describeRelationship(
     };
   }
 
-  const blood = bloodRelation(aId, bId, parents, genderOf);
+  const blood = bloodKin(aId, bId, parents);
   if (blood) {
-    const article = /^[aeiou]/i.test(blood.aTerm) ? "an" : "a";
-    const articleB = /^[aeiou]/i.test(blood.bTerm) ? "an" : "a";
+    const aTerm = termFor(blood.kin, ga);
+    const bTerm = termFor(invert(blood.kin), gb);
     return {
       kind: "blood",
-      label: capitalise(blood.label),
-      aToB: `${name(aId)} is ${article} ${blood.aTerm} of ${name(bId)}.`,
-      bToA: `${name(bId)} is ${articleB} ${blood.bTerm} of ${name(aId)}.`,
+      label: pairLabel(blood.kin, ga),
+      aTerm,
+      bTerm,
+      aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
+      bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
       via:
         blood.ancestors.length > 0
           ? `Common ancestor${blood.ancestors.length > 1 ? "s" : ""}: ${blood.ancestors
@@ -288,11 +343,15 @@ export function describeRelationship(
   }
 
   if ((spouses.get(aId) ?? []).includes(bId)) {
+    const aTerm = word("spouse", ga);
+    const bTerm = word("spouse", gb);
     return {
       kind: "spouse",
       label: "Spouses",
-      aToB: `${name(aId)} is the ${word("spouse", genderOf(aId))} of ${name(bId)}.`,
-      bToA: `${name(bId)} is the ${word("spouse", genderOf(bId))} of ${name(aId)}.`,
+      aTerm,
+      bTerm,
+      aToB: `${name(aId)} is the ${aTerm} of ${name(bId)}.`,
+      bToA: `${name(bId)} is the ${bTerm} of ${name(aId)}.`,
       commonAncestorIds: [],
       path,
     };
@@ -300,27 +359,37 @@ export function describeRelationship(
 
   // in-laws: one of them is married to a blood relative of the other
   for (const spouse of spouses.get(aId) ?? []) {
-    const rel = bloodRelation(spouse, bId, parents, genderOf);
+    const rel = bloodKin(spouse, bId, parents);
     if (!rel) continue;
+    // A married into B's line: A is the spouse of B's {rel}
+    const aTerm = spouseOfKinTerm(rel.kin, ga);
+    const bTerm = kinOfSpouseTerm(invert(rel.kin), gb);
     return {
       kind: "marriage",
-      label: `${capitalise(rel.aTerm)}-in-law`,
-      aToB: `${name(aId)} is married to ${name(bId)}'s ${rel.aTerm}, ${name(spouse)}.`,
-      bToA: `${name(bId)} is ${name(aId)}'s ${rel.bTerm} by marriage.`,
-      via: `Through ${name(spouse)}`,
+      label: capitalise(aTerm),
+      aTerm,
+      bTerm,
+      aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
+      bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
+      via: `Through ${name(spouse)}, ${name(bId)}'s ${termFor(rel.kin, genderOf(spouse))}`,
       commonAncestorIds: rel.ancestors,
       path,
     };
   }
   for (const spouse of spouses.get(bId) ?? []) {
-    const rel = bloodRelation(spouse, aId, parents, genderOf);
+    const rel = bloodKin(spouse, aId, parents);
     if (!rel) continue;
+    // B married into A's line: B is the spouse of A's {rel}
+    const bTerm = spouseOfKinTerm(rel.kin, gb);
+    const aTerm = kinOfSpouseTerm(invert(rel.kin), ga);
     return {
       kind: "marriage",
-      label: `${capitalise(rel.aTerm)}-in-law`,
-      aToB: `${name(aId)} is ${name(bId)}'s ${rel.bTerm} by marriage.`,
-      bToA: `${name(bId)} is married to ${name(aId)}'s ${rel.aTerm}, ${name(spouse)}.`,
-      via: `Through ${name(spouse)}`,
+      label: capitalise(aTerm),
+      aTerm,
+      bTerm,
+      aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
+      bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
+      via: `Through ${name(spouse)}, ${name(aId)}'s ${termFor(rel.kin, genderOf(spouse))}`,
       commonAncestorIds: rel.ancestors,
       path,
     };

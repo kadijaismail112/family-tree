@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { spousesOf } from "@/lib/helpers";
 import type { Gender, Person } from "@/lib/types";
 import { GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
+import { PersonPicker } from "./PersonPicker";
 
 interface Row {
   name: string;
@@ -25,12 +26,14 @@ export function AddChildrenModal({
   familyId,
   people,
   parentId,
+  mePersonId,
 }: {
   open: boolean;
   onClose: () => void;
   familyId: string;
   people: Person[];
   parentId: string | null;
+  mePersonId?: string | null;
 }) {
   const { state, addChildren } = useStore();
   const toast = useToast();
@@ -78,29 +81,19 @@ export function AddChildrenModal({
       onClose={onClose}
       title={parent ? `Children of ${parent.name}` : "Add children"}
       subtitle="Add a whole set of siblings at once — they all get the same parents."
-      wide
+      size="lg"
     >
       {people.filter((p) => p.id !== parentId).length > 0 && (
-        <label className="mb-4 block">
-          <span className="mb-1.5 block text-sm font-medium text-stone-700">
-            Other parent
-          </span>
-          <select
-            className={inputCls}
+        <div className="mb-4">
+          <PersonPicker
+            label="Other parent"
+            people={people.filter((p) => p.id !== parentId)}
             value={secondParentId}
-            onChange={(e) => setSecondParentId(e.target.value)}
-          >
-            <option value="">Just {parent?.name.split(" ")[0] ?? "one parent"}</option>
-            {people
-              .filter((p) => p.id !== parentId)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {spouseIds.includes(p.id) ? " (their spouse)" : ""}
-                </option>
-              ))}
-          </select>
-        </label>
+            onChange={setSecondParentId}
+            mePersonId={mePersonId}
+            noneLabel={`Just ${parent?.name.split(" ")[0] ?? "one parent"}`}
+          />
+        </div>
       )}
 
       <div className="space-y-2">

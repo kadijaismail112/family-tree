@@ -6,6 +6,7 @@ import { parentsOf, spousesOf } from "@/lib/helpers";
 import type { Person, RelationKind, RelationType } from "@/lib/types";
 import { kindsFor, defaultKind } from "@/lib/types";
 import { Field, GhostButton, inputCls, Modal, PrimaryButton, useToast } from "./ui";
+import { PersonPicker } from "./PersonPicker";
 
 export function ConnectModal({
   open,
@@ -13,12 +14,14 @@ export function ConnectModal({
   familyId,
   people,
   initialFromId,
+  mePersonId,
 }: {
   open: boolean;
   onClose: () => void;
   familyId: string;
   people: Person[];
   initialFromId?: string | null;
+  mePersonId?: string | null;
 }) {
   const { state, addRelationship } = useStore();
   const toast = useToast();
@@ -33,9 +36,10 @@ export function ConnectModal({
 
   useEffect(() => {
     if (open) {
-      const first = initialFromId ?? people[0]?.id ?? "";
-      setFromId(first);
-      setToId(people.find((p) => p.id !== first)?.id ?? "");
+      // The second slot stays empty on purpose: pre-filling it with whoever
+      // happened to be first in the list invites a connection nobody meant.
+      setFromId(initialFromId ?? "");
+      setToId("");
       setType("PARENT_OF");
       setIncludeCoParent(true);
       setError(null);
@@ -94,6 +98,7 @@ export function ConnectModal({
       onClose={onClose}
       title="Connect two people"
       subtitle="Draw a branch between people already in the tree."
+      size="lg"
     >
       <form
         onSubmit={(e) => {
@@ -102,15 +107,17 @@ export function ConnectModal({
         }}
         className="space-y-4"
       >
-        <Field label="This person…">
-          <select className={inputCls} value={fromId} onChange={(e) => { setFromId(e.target.value); setError(null); }}>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <PersonPicker
+          label="This person…"
+          people={people}
+          value={fromId}
+          mePersonId={mePersonId}
+          disabledIds={toId ? [toId] : undefined}
+          onChange={(id) => {
+            setFromId(id);
+            setError(null);
+          }}
+        />
 
         <Field label="…is the…">
           <select
@@ -143,15 +150,17 @@ export function ConnectModal({
           </select>
         </Field>
 
-        <Field label="…this person">
-          <select className={inputCls} value={toId} onChange={(e) => { setToId(e.target.value); setError(null); }}>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <PersonPicker
+          label="…this person"
+          people={people}
+          value={toId}
+          mePersonId={mePersonId}
+          disabledIds={fromId ? [fromId] : undefined}
+          onChange={(id) => {
+            setToId(id);
+            setError(null);
+          }}
+        />
 
         {coParent && (
           <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-teal-700/25 bg-teal-800/5 px-3.5 py-3">

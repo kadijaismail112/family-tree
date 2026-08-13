@@ -20,14 +20,17 @@ import {
 } from "@/lib/types";
 import { suggestionsFor } from "@/lib/suggestions";
 import { computeKinship } from "@/lib/kinship";
+import { describeRelationship } from "@/lib/relationship";
 import type { Person, Relationship } from "@/lib/types";
 import {
   Avatar,
+  Collapsible,
   DangerButton,
   Field,
   GhostButton,
   inputCls,
   PrimaryButton,
+  Segmented,
   useAction,
   useToast,
 } from "./ui";
@@ -161,11 +164,23 @@ function PersonDetail({
   onToggleIsolate: (personId: string) => void;
   onCompare: (personId: string) => void;
 }) {
-  const { state, currentUser, updatePerson, deletePerson, addRelationship, dismissSuggestion, setPersonPhoto, claimPerson } =
-    useStore();
+  const {
+    state,
+    currentUser,
+    updatePerson,
+    deletePerson,
+    addRelationship,
+    dismissSuggestion,
+    setPersonPhoto,
+    claimPerson,
+    unclaimPerson,
+  } = useStore();
   const toast = useToast();
   const { run, pending } = useAction();
   const [editing, setEditing] = useState(false);
+  // Asking everyone for a death year — including the living — is both grim
+  // and noise, so the group only appears when it's relevant or asked for.
+  const [showDeathAsked, setShowDeathAsked] = useState(false);
   const [draft, setDraft] = useState({
     name: "",
     birthYear: "",
@@ -203,15 +218,49 @@ function PersonDetail({
   const life = lifespan(person.birthYear, person.deathYear);
   const isYou = !!currentUser && person.accountUserId === currentUser.id;
   const claimed = !!person.accountUserId;
-  const marriedIn = useMemo(() => {
-    const familyPeople = state.people.filter((p) => p.familyId === person.familyId);
-    const familyRels = state.relationships.filter(
-      (r) => r.familyId === person.familyId
-    );
-    return !computeKinship(familyPeople, familyRels, currentUser?.id).bloodIds.has(person.id);
-  }, [state.people, state.relationships, person.familyId, person.id, currentUser?.id]);
+
+  const familyPeople = useMemo(
+    () => state.people.filter((p) => p.familyId === person.familyId),
+    [state.people, person.familyId]
+  );
+  const familyRels = useMemo(
+    () => state.relationships.filter((r) => r.familyId === person.familyId),
+    [state.relationships, person.familyId]
+  );
+
+  const marriedIn = useMemo(
+    () =>
+      !computeKinship(familyPeople, familyRels, currentUser?.id).bloodIds.has(person.id),
+    [familyPeople, familyRels, person.id, currentUser?.id]
+  );
+
+  /**
+   * Drawing the line between you and someone was only half an answer — it
+   * showed *that* you're connected without ever saying what the connection
+   * is called. This names it, in your direction: "your great-aunt", not
+   * "Almaz is a great-aunt of Yosief".
+   */
+  const toMe = useMemo(
+    () =>
+      mePersonId && mePersonId !== person.id
+        ? describeRelationship(person.id, mePersonId, familyPeople, familyRels)
+        : null,
+    [mePersonId, person.id, familyPeople, familyRels]
+  );
+
+  const showDeath =
+    showDeathAsked ||
+    draft.lifeStatus === "deceased" ||
+    !!draft.deathYear ||
+    !!draft.deathDate;
+
+  const datesOutOfOrder =
+    /^\d{4}$/.test(draft.birthYear) &&
+    /^\d{4}$/.test(draft.deathYear) &&
+    Number(draft.deathYear) < Number(draft.birthYear);
 
   const startEdit = () => {
+    setShowDeathAsked(false);
     setDraft({
       name: person.name,
       birthYear: person.birthYear ?? "",
@@ -239,19 +288,51 @@ function PersonDetail({
     if (saved) setEditing(false);
   };
 
-  const relSentence = (r: Relationship) => {
-    const otherId = r.fromPersonId === person.id ? r.toPersonId : r.fromPersonId;
-    const other = state.people.find((p) => p.id === otherId);
-    const label =
-      r.type === "SPOUSE_OF"
-        ? "Spouse of"
-        : r.type === "SIBLING_OF"
-          ? "Sibling of"
-          : r.fromPersonId === person.id
-            ? "Parent of"
-            : "Child of";
-    return { label, other };
-  };
+  /**
+   * Grouped rather than listed flat: "Parent of X / Parent of Y / Parent of
+   * Z" spends three lines and most of its width repeating the same two words.
+   */
+  const connectionGroups = useMemo(() => {
+    const buckets: Record<string, { rel: Relationship; other?: Person }[]> = {
+      Parents: [],
+      Siblings: [],
+      Partners: [],
+      Children: [],
+    };
+    for (const r of rels) {
+      const otherId = r.fromPersonId === person.id ? r.toPersonId : r.fromPersonId;
+      const other = state.people.find((p) => p.id === otherId);
+      const bucket =
+        r.type === "SPOUSE_OF"
+          ? "Partners"
+          : r.type === "SIBLING_OF"
+            ? "Siblings"
+            : r.fromPersonId === person.id
+              ? "Children"
+              : "Parents";
+      buckets[bucket].push({ rel: r, other });
+    }
+    return Object.entries(buckets)
+      .filter(([, items]) => items.length > 0)
+      .map(([label, items]) => ({ label, items }));
+  }, [rels, person.id, state.people]);
+
+  /** what the collapsed row says, so folding it away loses nothing */
+  const connectionSummary = useMemo(
+    () =>
+      connectionGroups
+        .map(({ label, items }) => {
+          const noun =
+            items.length === 1
+              ? { Parents: "parent", Siblings: "sibling", Partners: "partner", Children: "child" }[
+                  label
+                ]
+              : label.toLowerCase();
+          return `${items.length} ${noun}`;
+        })
+        .join(" · "),
+    [connectionGroups]
+  );
 
   return (
     <div className="px-5 py-4">
@@ -279,7 +360,36 @@ function PersonDetail({
             {person.lifeStatus === "living" && <Chip tone="teal">Living</Chip>}
             {person.lifeStatus === "deceased" && <Chip tone="stone">Deceased</Chip>}
             {!person.lifeStatus && <Chip tone="stone">Status unknown</Chip>}
-            {isYou && <Chip tone="teal">This is you</Chip>}
+            {/* Claiming is a toggle: a mis-tap has to be undoable. */}
+            {isYou && (
+              <button
+                type="button"
+                disabled={pending}
+                title="Release this node — it will no longer be marked as you"
+                onClick={() =>
+                  void run(() => unclaimPerson(person.id), {
+                    success: "No longer marked as you",
+                    failure: "Couldn't release that",
+                  })
+                }
+                className="group flex items-center gap-1 rounded-full bg-teal-800/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-800 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+              >
+                <span className="group-hover:hidden">This is you</span>
+                <span className="hidden group-hover:inline">Not you?</span>
+                <svg
+                  width="9"
+                  height="9"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  className="opacity-50 transition group-hover:opacity-100"
+                >
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            )}
             {claimed && !isYou && <Chip tone="teal">Has an account</Chip>}
             {!claimed && (
               <button
@@ -340,28 +450,53 @@ function PersonDetail({
             How are they related to…
           </button>
 
-          {/* "Me" — trace how you're related */}
-          {mePersonId && person.id !== mePersonId && (
-            <div className="mt-4">
-              <button
-                onClick={onToggleMeMode}
-                className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
-                  meModeOn
-                    ? "border-teal-700 bg-teal-800 text-white shadow-sm"
-                    : "border-stone-200 bg-white text-stone-700 hover:border-teal-700/40 hover:bg-teal-800/5"
-                }`}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="5" cy="19" r="2.4" />
-                  <circle cx="19" cy="5" r="2.4" />
-                  <path d="M7 17.2c3-2.6 7-6.6 10-10.4" strokeDasharray="1 3.2" />
-                </svg>
-                {meModeOn ? "Hide my connection" : "How are we connected?"}
-              </button>
-              {meModeOn && !pathFound && (
-                <p className="mt-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+          {/* "Me" — what the connection is called, and the line on the tree */}
+          {toMe && (
+            <div className="mt-4 rounded-xl border border-teal-700/25 bg-teal-800/5 px-3.5 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-teal-800">
+                Related to you
+              </p>
+              <p className="font-display mt-0.5 text-base font-semibold leading-tight text-teal-900">
+                {toMe.aTerm
+                  ? `Your ${toMe.aTerm}`
+                  : toMe.kind === "distant"
+                    ? "Related by marriage"
+                    : "No recorded link to you yet"}
+              </p>
+              {toMe.via && (
+                <p className="mt-1 text-xs leading-relaxed text-stone-500">{toMe.via}</p>
+              )}
+              {toMe.kind === "distant" && (
+                <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                  Connected through the tree, but you share no common ancestor.
+                </p>
+              )}
+              {toMe.kind === "none" ? (
+                <p className="mt-2 text-xs leading-relaxed text-stone-500">
                   No recorded chain of relationships links you two yet — add the
-                  missing branches and try again.
+                  missing branches and it&apos;ll work itself out.
+                </p>
+              ) : (
+                <button
+                  onClick={onToggleMeMode}
+                  className={`mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                    meModeOn
+                      ? "border-teal-700 bg-teal-800 text-white shadow-sm"
+                      : "border-teal-700/30 bg-white text-teal-800 hover:bg-teal-800/10"
+                  }`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="5" cy="19" r="2.4" />
+                    <circle cx="19" cy="5" r="2.4" />
+                    <path d="M7 17.2c3-2.6 7-6.6 10-10.4" strokeDasharray="1 3.2" />
+                  </svg>
+                  {meModeOn ? "Hide the line" : "Trace it on the tree"}
+                </button>
+              )}
+              {meModeOn && !pathFound && toMe.kind !== "none" && (
+                <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                  The line can&apos;t be drawn from here — clear the traced path
+                  or isolate view and try again.
                 </p>
               )}
             </div>
@@ -474,51 +609,61 @@ function PersonDetail({
           {/* Additional info */}
           <PersonExtras person={person} onSelectPerson={onSelectPerson} />
 
-          {/* Connections */}
-          <div className="mt-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-stone-400">
-              Connections · {rels.length}
-            </p>
+          {/* Connections — folded away by default: the tree already draws
+              them, and repeating "Parent of" down a column of near-identical
+              rows was the tallest thing in the panel. */}
+          <Collapsible
+            title="Connections"
+            count={rels.length}
+            summary={connectionSummary}
+            defaultOpen={rels.length === 0}
+          >
             {rels.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-stone-200 px-3.5 py-3 text-sm text-stone-400">
-                Not connected to anyone yet.
-              </p>
+              <p className="py-1 text-sm text-stone-400">Not connected to anyone yet.</p>
             ) : (
-              <ul className="space-y-1.5">
-                {rels.map((r) => {
-                  const { label, other } = relSentence(r);
-                  const confirms = state.confirmations.filter(
-                    (c) => c.relationshipId === r.id && c.type === "CONFIRM"
-                  ).length;
-                  const disputes = state.confirmations.filter(
-                    (c) => c.relationshipId === r.id && c.type === "DISPUTE"
-                  ).length;
-                  return (
-                    <li key={r.id}>
-                      <button
-                        onClick={() => onSelectRelationship(r.id)}
-                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-stone-100 bg-white px-3 py-2 text-left transition hover:border-stone-200 hover:bg-stone-50"
-                      >
-                        <span className="min-w-0 truncate text-sm text-stone-700">
-                          <span className="text-stone-400">{label}</span>{" "}
-                          <span className="font-medium">{other?.name ?? "?"}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold">
-                          {confirms > 0 && <span className="text-teal-700">+{confirms}</span>}
-                          {disputes > 0 && <span className="text-red-600">−{disputes}</span>}
-                          {disputes > 0 && (
-                            <span className="ml-0.5 rounded-full bg-red-50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-red-600">
-                              disputed
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="space-y-3">
+                {connectionGroups.map((group) => (
+                  <div key={group.label}>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+                      {group.label}
+                    </p>
+                    <ul className="space-y-1">
+                      {group.items.map(({ rel: r, other }) => {
+                        const confirms = state.confirmations.filter(
+                          (c) => c.relationshipId === r.id && c.type === "CONFIRM"
+                        ).length;
+                        const disputes = state.confirmations.filter(
+                          (c) => c.relationshipId === r.id && c.type === "DISPUTE"
+                        ).length;
+                        return (
+                          <li key={r.id}>
+                            <button
+                              onClick={() => onSelectRelationship(r.id)}
+                              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-stone-50"
+                            >
+                              <span className="min-w-0 truncate text-sm font-medium text-stone-700">
+                                {other?.name ?? "?"}
+                              </span>
+                              <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold">
+                                {confirms > 0 && (
+                                  <span className="text-teal-700">+{confirms}</span>
+                                )}
+                                {disputes > 0 && (
+                                  <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-red-600">
+                                    disputed
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
-          </div>
+          </Collapsible>
 
           {/* Actions */}
           <div className="mt-5 grid grid-cols-2 gap-2">
@@ -562,6 +707,22 @@ function PersonDetail({
           }}
           className="space-y-4"
         >
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              aria-label="Back to details"
+              className="-ml-1 rounded-lg p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <p className="font-display text-base font-semibold text-stone-900">
+              Edit details
+            </p>
+          </div>
+
           <Field label="Full name">
             <input
               className={inputCls}
@@ -569,94 +730,132 @@ function PersonDetail({
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Birth year">
-              <input
-                className={inputCls}
-                placeholder="1994"
-                value={draft.birthYear}
-                onChange={(e) => setDraft((d) => ({ ...d, birthYear: e.target.value }))}
-              />
-            </Field>
-            <Field label="Death year">
-              <input
-                className={inputCls}
-                value={draft.deathYear}
-                onChange={(e) => setDraft((d) => ({ ...d, deathYear: e.target.value }))}
-              />
-            </Field>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Exact birth date" hint="optional">
-              <input
-                type="date"
-                className={inputCls}
-                value={draft.birthDate}
-                onChange={(e) => setDraft((d) => ({ ...d, birthDate: e.target.value }))}
-              />
-            </Field>
-            <Field label="Exact death date" hint="optional">
-              <input
-                type="date"
-                className={inputCls}
-                value={draft.deathDate}
-                onChange={(e) => setDraft((d) => ({ ...d, deathDate: e.target.value }))}
-              />
-            </Field>
-          </div>
-          <p className="-mt-1 text-[11px] leading-relaxed text-stone-400">
-            An exact date fills in the year for you, so the two can never
-            disagree.
+          <Segmented
+            label="Status"
+            value={draft.lifeStatus}
+            onChange={(lifeStatus) => setDraft((d) => ({ ...d, lifeStatus }))}
+            options={[
+              { value: "" as const, label: "Unknown" },
+              { value: "living" as const, label: "Living" },
+              { value: "deceased" as const, label: "Deceased" },
+            ]}
+          />
+
+          {/* Born / died as two small groups. A year and "the exact date" are
+              the same fact at different precision, so they belong together
+              rather than in two rows of four boxes that read as four facts. */}
+          <fieldset className="rounded-xl border border-stone-200 px-3 py-2.5">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-stone-400">
+              Born
+            </legend>
+            {/* Widths live on wrappers: `inputCls` already carries `w-full`,
+                and two competing width utilities on one element resolve by
+                stylesheet order, not by which one is written last. */}
+            <div className="flex items-center gap-2">
+              <div className="w-[5.25rem] shrink-0">
+                <input
+                  className={inputCls}
+                  placeholder="Year"
+                  inputMode="numeric"
+                  maxLength={4}
+                  aria-label="Birth year"
+                  value={draft.birthYear}
+                  onChange={(e) => setDraft((d) => ({ ...d, birthYear: e.target.value }))}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <input
+                  type="date"
+                  aria-label="Exact birth date"
+                  className={`${inputCls} px-2`}
+                  value={draft.birthDate}
+                  onChange={(e) => setDraft((d) => ({ ...d, birthDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-stone-400">
+              An exact date fills in the year for you.
+            </p>
+          </fieldset>
+
+          {showDeath ? (
+            <fieldset className="rounded-xl border border-stone-200 px-3 py-2.5">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-stone-400">
+                Died
+              </legend>
+              <div className="flex items-center gap-2">
+                <div className="w-[5.25rem] shrink-0">
+                  <input
+                    className={inputCls}
+                    placeholder="Year"
+                    inputMode="numeric"
+                    maxLength={4}
+                    aria-label="Death year"
+                    value={draft.deathYear}
+                    onChange={(e) => setDraft((d) => ({ ...d, deathYear: e.target.value }))}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <input
+                    type="date"
+                    aria-label="Exact death date"
+                    className={`${inputCls} px-2`}
+                    value={draft.deathDate}
+                    onChange={(e) => setDraft((d) => ({ ...d, deathDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              {datesOutOfOrder && (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700">
+                  That death year is before the birth year — worth a second look.
+                </p>
+              )}
+            </fieldset>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowDeathAsked(true)}
+              className="text-xs font-semibold text-stone-500 transition hover:text-teal-800"
+            >
+              + Add death dates
+            </button>
+          )}
+
+          <Segmented
+            label="Gender"
+            hint="for wording only"
+            value={draft.gender}
+            onChange={(gender) => setDraft((d) => ({ ...d, gender }))}
+            options={[
+              { value: "" as const, label: "Unset" },
+              { value: "female" as const, label: "Female" },
+              { value: "male" as const, label: "Male" },
+              { value: "other" as const, label: "Other" },
+            ]}
+          />
+          <p className="-mt-2 text-[11px] leading-relaxed text-stone-400">
+            Only used to choose words like &ldquo;mother&rdquo; or
+            &ldquo;niece&rdquo;. Left unset, the tree says &ldquo;parent&rdquo;.
           </p>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Status">
-              <select
-                className={inputCls}
-                value={draft.lifeStatus}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, lifeStatus: e.target.value as LifeStatus | "" }))
-                }
-              >
-                <option value="">Unknown</option>
-                <option value="living">Living</option>
-                <option value="deceased">Deceased</option>
-              </select>
-            </Field>
-            <Field label="Gender" hint="for wording">
-              <select
-                className={inputCls}
-                value={draft.gender}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, gender: e.target.value as Gender | "" }))
-                }
-              >
-                <option value="">Not recorded</option>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-                <option value="other">Other</option>
-              </select>
-            </Field>
-          </div>
-          <p className="-mt-1 text-[11px] leading-relaxed text-stone-400">
-            Gender is only used to choose words like &ldquo;mother&rdquo; or
-            &ldquo;niece&rdquo;. Leave it unset and the tree says
-            &ldquo;parent&rdquo; instead.
-          </p>
           <Field label="Notes">
             <textarea
               className={`${inputCls} min-h-[80px] resize-y`}
+              placeholder="A story, where they lived, anything worth remembering…"
               value={draft.notes}
               onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
             />
           </Field>
-          <div className="flex justify-end gap-2">
+
+          {/* Sticky, because the form is taller than the panel and the save
+              button used to sit below the fold on every phone. */}
+          <div className="sticky bottom-0 -mx-5 flex justify-end gap-2 border-t border-stone-100 bg-white px-5 pb-1 pt-3">
             <GhostButton type="button" onClick={() => setEditing(false)}>
               Cancel
             </GhostButton>
             <PrimaryButton type="submit" disabled={!draft.name.trim() || pending}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? "Saving…" : "Save changes"}
             </PrimaryButton>
           </div>
         </form>
