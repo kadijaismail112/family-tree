@@ -6,6 +6,7 @@ import { fileToDataUrl, timeAgo, userName } from "@/lib/helpers";
 import type { DetailKey, Person, PersonPhoto } from "@/lib/types";
 import { PERSON_DETAIL_FIELDS } from "@/lib/types";
 import { Avatar, GhostButton, inputCls, Modal, PrimaryButton, useToast } from "./ui";
+import { CityInput } from "./CityInput";
 
 type EditorTarget = DetailKey | "photo" | "voice" | "comment";
 
@@ -381,6 +382,13 @@ function FieldEditor({
           placeholder={def.placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+        />
+      ) : def.kind === "city" ? (
+        <CityInput
+          autoFocus
+          placeholder={def.placeholder}
+          value={value}
+          onChange={setValue}
         />
       ) : (
         <input

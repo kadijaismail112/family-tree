@@ -214,8 +214,17 @@ export interface CityGroup {
   people: Person[];
 }
 
-/** Group a family's living locations into placeable points plus leftovers. */
-export function groupByCity(people: Person[]): {
+/**
+ * Group a family's living locations into placeable points plus leftovers.
+ *
+ * `resolve` defaults to the built-in gazetteer so callers stay synchronous.
+ * The map passes the full GeoNames set once it has loaded, which is what
+ * lets small towns place rather than falling into `unplaced`.
+ */
+export function groupByCity(
+  people: Person[],
+  resolve: (raw: string) => City | null = lookupCity
+): {
   groups: CityGroup[];
   unplaced: { label: string; people: Person[] }[];
   without: number;
@@ -230,7 +239,7 @@ export function groupByCity(people: Person[]): {
       without++;
       continue;
     }
-    const city = lookupCity(raw);
+    const city = resolve(raw);
     if (city) {
       const key = `${city.lat},${city.lon}`;
       if (!byKey.has(key)) byKey.set(key, { city, people: [] });

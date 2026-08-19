@@ -114,13 +114,15 @@ export type DetailKey =
 export interface DetailFieldDef {
   key: DetailKey;
   label: string;
-  kind: "text" | "textarea" | "date" | "tel" | "email" | "url";
+  // "city" renders a place picker rather than a bare text box, so the user
+  // can see whether what they typed will actually land on the map.
+  kind: "text" | "textarea" | "date" | "tel" | "email" | "url" | "city";
   placeholder?: string;
 }
 
 export const PERSON_DETAIL_FIELDS: DetailFieldDef[] = [
-  { key: "currentCity", label: "Current city", kind: "text", placeholder: "e.g. Chicago, IL" },
-  { key: "birthCity", label: "Birth city", kind: "text", placeholder: "e.g. Quetzaltenango" },
+  { key: "currentCity", label: "Current city", kind: "city", placeholder: "Start typing a city or town…" },
+  { key: "birthCity", label: "Birth city", kind: "city", placeholder: "Start typing a city or town…" },
   { key: "funnyStories", label: "Funny stories", kind: "textarea", placeholder: "The one everyone tells at dinner…" },
   { key: "phone", label: "Phone number", kind: "tel", placeholder: "+1 (555) 010-0000" },
   { key: "email", label: "Email", kind: "email", placeholder: "name@example.com" },

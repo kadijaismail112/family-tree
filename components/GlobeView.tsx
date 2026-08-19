@@ -6,7 +6,8 @@ import { feature } from "topojson-client";
 import type { FeatureCollection, Geometry } from "geojson";
 import landTopo from "world-atlas/land-110m.json";
 import type { Person } from "@/lib/types";
-import { groupByCity, type CityGroup } from "@/lib/geo";
+import { groupByCity, type City, type CityGroup } from "@/lib/geo";
+import { loadGazetteer, resolvePlace } from "@/lib/gazetteer";
 import { Avatar } from "./ui";
 
 // world-atlas ships TopoJSON; unpack it once at module scope
@@ -30,7 +31,30 @@ export function GlobeView({
   const [spinning, setSpinning] = useState(true);
   const drag = useRef<{ x: number; y: number; rot: [number, number] } | null>(null);
 
-  const { groups, unplaced, without } = useMemo(() => groupByCity(people), [people]);
+  // The globe renders immediately off the built-in gazetteer, then re-groups
+  // against the full GeoNames set once it arrives — otherwise every small town
+  // the picker promised to place would sit in "couldn't place".
+  const [resolve, setResolve] = useState<{ fn: ((raw: string) => City | null) | null }>({
+    fn: null,
+  });
+  useEffect(() => {
+    let live = true;
+    loadGazetteer()
+      .then((data) => {
+        if (live) setResolve({ fn: (raw: string) => resolvePlace(data, raw) });
+      })
+      .catch(() => {
+        /* fall back to the built-in list */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const { groups, unplaced, without } = useMemo(
+    () => (resolve.fn ? groupByCity(people, resolve.fn) : groupByCity(people)),
+    [people, resolve]
+  );
 
   useEffect(() => {
     const el = wrapRef.current;
