@@ -66,7 +66,7 @@ export default function LandingPage() {
           A family tree the whole family writes.
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-stone-600">
-          Rootline is a shared space for your family&apos;s history. Anyone can add a
+          Dynasty is a shared space for your family&apos;s history. Anyone can add a
           relative, every addition is signed, and the family confirms what&apos;s true —
           no gatekeepers, no lost lore.
         </p>
@@ -126,7 +126,7 @@ function Logo({ muted = false }: { muted?: boolean }) {
         <circle cx="18.5" cy="18" r="2.4" />
         <path d="M12 7.4V12m0 0l-5 3.8M12 12l5 3.8" />
       </svg>
-      Rootline
+      Dynasty
     </span>
   );
 }

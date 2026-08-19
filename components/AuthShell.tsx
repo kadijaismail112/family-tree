@@ -14,7 +14,7 @@ export function AuthShell({
     <main className="flex min-h-screen flex-col bg-stone-50">
       <header className="mx-auto flex w-full max-w-md items-center justify-between px-6 py-6">
         <Link href="/" className="font-display text-lg font-semibold text-stone-900">
-          Rootline
+          Dynasty
         </Link>
       </header>
       <div className="flex flex-1 items-start justify-center px-6 pb-16">

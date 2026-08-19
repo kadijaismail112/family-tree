@@ -94,7 +94,7 @@ export default function DashboardPage() {
       <header className="border-b border-stone-200/70 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="font-display text-lg font-semibold text-stone-900">
-            Rootline
+            Dynasty
           </Link>
           <button
             onClick={async () => {

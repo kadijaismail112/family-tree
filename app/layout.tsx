@@ -11,10 +11,29 @@ const fraunces = Fraunces({
   axes: ["opsz"],
 });
 
+const description =
+  "Build your family tree together. Every branch remembers who added it, and the whole family keeps it honest.";
+
 export const metadata: Metadata = {
-  title: "Rootline — private, collaborative family trees",
-  description:
-    "Build your family tree together. Every branch remembers who added it, and the whole family keeps it honest.",
+  metadataBase: new URL("https://www.trydynasty.app"),
+  title: {
+    default: "Dynasty — private, collaborative family trees",
+    template: "%s · Dynasty",
+  },
+  description,
+  applicationName: "Dynasty",
+  openGraph: {
+    type: "website",
+    siteName: "Dynasty",
+    url: "/",
+    title: "Dynasty — private, collaborative family trees",
+    description,
+  },
+  twitter: {
+    card: "summary",
+    title: "Dynasty — private, collaborative family trees",
+    description,
+  },
 };
 
 export default function RootLayout({

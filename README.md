@@ -1,4 +1,4 @@
-# Rootline
+# Dynasty
 
 A private, collaborative family tree. Anyone in a family can add a relative;
 every person and every connection permanently records who added it, and members
@@ -29,6 +29,12 @@ supabase gen types typescript --linked > lib/database.types.ts
 In the Supabase dashboard, add `http://localhost:3000/auth/callback` to
 **Authentication → URL configuration → Redirect URLs**, and set the site URL
 to `http://localhost:3000`.
+
+Production runs at `https://www.trydynasty.app`. Add
+`https://www.trydynasty.app/auth/callback` to the same **Redirect URLs** list and
+set the site URL to `https://www.trydynasty.app` — signup confirmations and
+password resets build their return link from the browser's origin, so they fail
+against any origin Supabase hasn't been told to allow.
 
 ## What's in it
 
