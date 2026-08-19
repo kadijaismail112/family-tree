@@ -1318,8 +1318,13 @@ function RelationshipEditor({
  * a name could be quietly rewritten with no trace. This closes that hole.
  */
 function EditHistory({ entityId }: { entityId: string }) {
-  const { state, editsFor } = useStore();
+  const { state, editsFor, ensureEdits } = useStore();
   const [open, setOpen] = useState(false);
+  // The audit trail is not part of the initial load — ask for this entity's
+  // history when the panel showing it appears.
+  useEffect(() => {
+    ensureEdits(entityId);
+  }, [entityId, ensureEdits]);
   const edits = editsFor(entityId);
   if (edits.length === 0) return null;
 

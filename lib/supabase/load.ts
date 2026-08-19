@@ -4,7 +4,6 @@ import type { Store } from "@/lib/types";
 import {
   mapComment,
   mapConfirmation,
-  mapEdit,
   mapFamily,
   mapInvite,
   mapMembership,
@@ -44,7 +43,6 @@ export async function loadStore(
     photos,
     tags,
     comments,
-    edits,
   ] = await Promise.all([
     supabase.from("profiles").select("*"),
     supabase.from("families").select("*"),
@@ -57,7 +55,6 @@ export async function loadStore(
     supabase.from("photos").select("*"),
     supabase.from("photo_tags").select("*"),
     supabase.from("comments").select("*"),
-    supabase.from("edits").select("*"),
   ]);
 
   const firstError = [
@@ -72,7 +69,6 @@ export async function loadStore(
     photos,
     tags,
     comments,
-    edits,
   ].find((r) => r.error)?.error;
   if (firstError) throw firstError;
 
@@ -112,7 +108,10 @@ export async function loadStore(
       mapPhoto(p, tagsByPhoto.get(p.id) ?? [], urls)
     ),
     comments: (comments.data ?? []).map(mapComment),
-    edits: (edits.data ?? []).map(mapEdit),
+    // `edits` is deliberately absent: it is append-only and unbounded, and the
+    // history panel is the only thing that reads it. Fetching it per entity on
+    // open keeps the whole audit trail out of every session's boot payload.
+    edits: [],
     dismissedSuggestions: (dismissed.data ?? []).map((d) => d.key),
   };
 }

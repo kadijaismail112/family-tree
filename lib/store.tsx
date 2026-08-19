@@ -132,6 +132,8 @@ interface StoreApi {
   removeComment: (commentId: string) => Promise<void>;
   dismissSuggestion: (familyId: string, key: string) => Promise<void>;
   editsFor: (entityId: string) => EditRecord[];
+  /** Load one entity's audit trail on demand; safe to call on every render. */
+  ensureEdits: (entityId: string) => void;
 }
 
 const StoreContext = createContext<StoreApi | null>(null);
@@ -224,15 +226,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    * already repainted and a history line arriving a moment later costs
    * nobody anything.
    */
+  // Entities whose history has been pulled, so opening the same panel twice
+  // doesn't refetch and an entity with genuinely no edits isn't asked for
+  // again on every render.
+  const fetchedEdits = useRef<Set<string>>(new Set());
+
   const syncEdits = useCallback(async (entityId: string) => {
     const supabase = createClient();
     const { data } = await supabase.from("edits").select("*").eq("entity_id", entityId);
     if (!data) return;
+    fetchedEdits.current.add(entityId);
     setState((s) => ({
       ...s,
       edits: [...s.edits.filter((e) => e.entityId !== entityId), ...data.map(mapEdit)],
     }));
   }, []);
+
+  /**
+   * Pull one entity's history the first time something asks to display it.
+   * The audit trail is no longer part of the initial load, so the panel has
+   * to say when it wants a trail rather than assuming one is already here.
+   */
+  const ensureEdits = useCallback(
+    (entityId: string) => {
+      if (fetchedEdits.current.has(entityId)) return;
+      fetchedEdits.current.add(entityId);
+      void syncEdits(entityId);
+    },
+    [syncEdits]
+  );
 
   // Who the loaded store belongs to. Supabase re-announces SIGNED_IN whenever
   // the tab regains focus; without this, coming back to the tab would refetch
@@ -1064,6 +1086,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
     await supabase.auth.signOut();
     loadedFor.current = null;
+    fetchedEdits.current.clear();
     setState(EMPTY_STORE);
     setUserId(null);
     setAuthFallback(null);
@@ -1100,6 +1123,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     removeComment,
     dismissSuggestion,
     editsFor,
+    ensureEdits,
   };
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
