@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.15"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       comments: {
@@ -396,6 +421,74 @@ export type Database = {
           },
         ]
       }
+      person_invites: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          expires_at: string
+          family_id: string
+          id: string
+          invited_by: string | null
+          person_id: string
+          revoked: boolean
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          expires_at: string
+          family_id: string
+          id?: string
+          invited_by?: string | null
+          person_id: string
+          revoked?: boolean
+          token: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          expires_at?: string
+          family_id?: string
+          id?: string
+          invited_by?: string | null
+          person_id?: string
+          revoked?: boolean
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "person_invites_accepted_by_fkey"
+            columns: ["accepted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_invites_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_invites_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_invites_person_id_family_id_fkey"
+            columns: ["person_id", "family_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id", "family_id"]
+          },
+        ]
+      }
       photo_tags: {
         Row: {
           person_id: string
@@ -485,6 +578,7 @@ export type Database = {
           display_name: string
           email: string | null
           id: string
+          terms_accepted_at: string | null
           updated_at: string
         }
         Insert: {
@@ -493,6 +587,7 @@ export type Database = {
           display_name: string
           email?: string | null
           id: string
+          terms_accepted_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -501,6 +596,7 @@ export type Database = {
           display_name?: string
           email?: string | null
           id?: string
+          terms_accepted_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -576,6 +672,15 @@ export type Database = {
     }
     Functions: {
       accept_invite: { Args: { p_code: string }; Returns: string }
+      accept_person_invite: {
+        Args: {
+          p_birth_date?: string
+          p_current_city?: string
+          p_name: string
+          p_token: string
+        }
+        Returns: string
+      }
       add_children: {
         Args: { p_children: Json; p_family_id: string; p_parent_ids: string[] }
         Returns: string[]
@@ -583,25 +688,7 @@ export type Database = {
       claim_person: { Args: { p_person_id: string }; Returns: undefined }
       create_family: { Args: { p_name: string }; Returns: string }
       create_person_invite: {
-        Args: { p_person_id: string; p_days?: number }
-        Returns: string
-      }
-      peek_person_invite: {
-        Args: { p_token: string }
-        Returns: {
-          family_name: string
-          person_name: string
-          invited_by_name: string
-          expires_at: string
-        }[]
-      }
-      accept_person_invite: {
-        Args: {
-          p_token: string
-          p_name: string
-          p_birth_date?: string
-          p_current_city?: string
-        }
+        Args: { p_days?: number; p_person_id: string }
         Returns: string
       }
       is_family_creator: { Args: { p_family_id: string }; Returns: boolean }
@@ -612,6 +699,15 @@ export type Database = {
           family_id: string
           family_name: string
           member_count: number
+        }[]
+      }
+      peek_person_invite: {
+        Args: { p_token: string }
+        Returns: {
+          expires_at: string
+          family_name: string
+          invited_by_name: string
+          person_name: string
         }[]
       }
       remove_member: {
@@ -769,6 +865,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       audit_entity: ["person", "relationship"],
