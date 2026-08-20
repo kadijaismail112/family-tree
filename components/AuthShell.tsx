@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Wordmark } from "./ui";
 
 export function AuthShell({
   title,
@@ -13,8 +14,8 @@ export function AuthShell({
   return (
     <main className="flex min-h-screen flex-col bg-stone-50">
       <header className="mx-auto flex w-full max-w-md items-center justify-between px-6 py-6">
-        <Link href="/" className="font-display text-lg font-semibold text-stone-900">
-          Dynasty
+        <Link href="/" aria-label="Dynasty home">
+          <Wordmark />
         </Link>
       </header>
       <div className="flex flex-1 items-start justify-center px-6 pb-16">

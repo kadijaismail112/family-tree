@@ -15,6 +15,7 @@ import {
   Modal,
   PrimaryButton,
   useToast,
+  Wordmark,
 } from "@/components/ui";
 
 const ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
@@ -69,8 +70,8 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-stone-50">
       <header className="border-b border-stone-200/70 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <Link href="/" className="font-display text-lg font-semibold text-stone-900">
-            Dynasty
+          <Link href="/" aria-label="Dynasty home">
+            <Wordmark />
           </Link>
           <button
             onClick={async () => {
@@ -129,7 +130,7 @@ export default function DashboardPage() {
                 sub={
                   profile.oldestLiving
                     ? `${profile.oldestLiving.age} years old · ${profile.oldestLiving.familyName}`
-                    : "Mark someone as living to see this"
+                    : "Add a birth year to someone to see this"
                 }
               />
               <Stat
@@ -155,7 +156,7 @@ export default function DashboardPage() {
                 value={String(profile.livingCount)}
                 sub={
                   profile.unknownStatusCount
-                    ? `${profile.unknownStatusCount} with status unknown`
+                    ? `includes ${profile.unknownStatusCount} not marked deceased`
                     : "all statuses recorded"
                 }
               />

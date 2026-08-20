@@ -147,10 +147,17 @@ export function computeProfile(state: Store, userId: string): ProfileStats {
     }
   }
 
-  // oldest *living* relative — only counts people actually marked living
+  // Anyone not recorded as deceased counts as living. Requiring an explicit
+  // "living" mark meant a tree where nobody had touched the field reported
+  // zero living relatives out of fifty — the stat read as broken rather than
+  // as unrecorded. A death is the thing people actually record; being alive
+  // is the default state, and the schema already forces `deceased` the moment
+  // any death date is entered.
+  const isLiving = (p: Person) => p.lifeStatus !== "deceased";
+
   let oldestLiving: ProfileStats["oldestLiving"] = null;
   for (const { person, familyName } of relativePeople) {
-    if (person.lifeStatus !== "living") continue;
+    if (!isLiving(person)) continue;
     const age = ageOf(person);
     if (age === null) continue;
     if (!oldestLiving || age > oldestLiving.age)
@@ -159,9 +166,7 @@ export function computeProfile(state: Store, userId: string): ProfileStats {
 
   const allRelatives = relativePeople.map((r) => r.person);
   const { groups } = groupByCity(allRelatives);
-  const livingGroups = groupByCity(
-    allRelatives.filter((p) => p.lifeStatus === "living")
-  ).groups;
+  const livingGroups = groupByCity(allRelatives.filter(isLiving)).groups;
 
   return {
     families,
@@ -177,7 +182,7 @@ export function computeProfile(state: Store, userId: string): ProfileStats {
       : groups.length
         ? { city: groups[0].city.name, count: groups[0].people.length }
         : null,
-    livingCount: allRelatives.filter((p) => p.lifeStatus === "living").length,
+    livingCount: allRelatives.filter(isLiving).length,
     unknownStatusCount: allRelatives.filter((p) => !p.lifeStatus).length,
   };
 }

@@ -494,3 +494,47 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     </ToastContext.Provider>
   );
 }
+
+/* ─── Wordmark ──────────────────────────────────────────────────────── */
+
+/**
+ * The Dynasty lockup: glyph plus name.
+ *
+ * It exists because the two were being written out by hand at each site, and
+ * the dashboard and auth pages ended up with the name and no mark — the brand
+ * quietly disappearing on exactly the screens a signed-in person looks at most.
+ */
+export function Wordmark({
+  muted = false,
+  className = "",
+}: {
+  muted?: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`font-display inline-flex items-center gap-2 text-lg font-semibold ${
+        muted ? "text-stone-400" : "text-stone-900"
+      } ${className}`}
+    >
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={muted ? "#a8a29e" : "#115e59"}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        className="shrink-0"
+      >
+        <circle cx="12" cy="5" r="2.4" />
+        <circle cx="5.5" cy="18" r="2.4" />
+        <circle cx="18.5" cy="18" r="2.4" />
+        <path d="M12 7.4V12m0 0l-5 3.8M12 12l5 3.8" />
+      </svg>
+      Dynasty
+    </span>
+  );
+}
