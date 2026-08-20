@@ -32,6 +32,22 @@ export function PersonExtras({
     setLightbox(null);
   }, [person.id]);
 
+  /**
+   * On a phone the detail panel is a bottom sheet capped at 72% of the screen,
+   * and "More details" sits at the very end of it. Opening the picker or an
+   * editor renders it below the fold, so the tap looked like it did nothing at
+   * all. Bring whatever just opened into view.
+   */
+  const revealRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!picking && !editing) return;
+    // After paint, or the element is measured before it has been laid out.
+    const id = requestAnimationFrame(() => {
+      revealRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [picking, editing]);
+
   const photos = useMemo(
     () =>
       state.photos.filter(
@@ -81,8 +97,15 @@ export function PersonExtras({
         </button>
       </div>
 
+      {/* Anchor for the scroll-into-view above: it has to sit outside the
+          conditional blocks so it exists whichever one opens. */}
+      <div ref={revealRef} className="scroll-mt-3" />
+
       {picking && (
-        <ul className="mb-3 max-h-56 overflow-y-auto rounded-xl border border-stone-200 bg-white py-1 shadow-sm">
+        // Deliberately not its own scroll container. Nested inside the sheet's
+        // scroller, a touch drag fights over which one moves; letting the list
+        // grow means the panel scrolls, which is the gesture people expect.
+        <ul className="mb-3 rounded-xl border border-stone-200 bg-white py-1 shadow-sm">
           {menuItems.map((item) => (
             <li key={item.key}>
               <button
