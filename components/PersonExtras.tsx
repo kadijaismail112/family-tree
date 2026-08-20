@@ -7,6 +7,7 @@ import type { DetailKey, Person, PersonPhoto } from "@/lib/types";
 import { PERSON_DETAIL_FIELDS } from "@/lib/types";
 import { Avatar, GhostButton, inputCls, Modal, PrimaryButton, useToast } from "./ui";
 import { CityInput } from "./CityInput";
+import { GALLERY_PHOTOS_ENABLED } from "@/lib/features";
 
 type EditorTarget = DetailKey | "photo" | "voice" | "comment";
 
@@ -50,7 +51,10 @@ export function PersonExtras({
     filledFields.length > 0 || photos.length > 0 || comments.length > 0 || !!person.voiceNameUrl;
 
   const menuItems: { key: EditorTarget; label: string }[] = [
-    { key: "photo", label: "Photo of / with them" },
+    // Gallery uploads are suspended for launch; profile pictures are not.
+    ...(GALLERY_PHOTOS_ENABLED
+      ? [{ key: "photo" as const, label: "Photo of / with them" }]
+      : []),
     ...(person.voiceNameUrl ? [] : [{ key: "voice" as const, label: "Voice recording of name" }]),
     { key: "comment", label: "Comment" },
     ...emptyFields.map((f) => ({ key: f.key, label: f.label })),
@@ -98,12 +102,12 @@ export function PersonExtras({
 
       {!hasAnything && !editing && !picking && (
         <p className="rounded-xl border border-dashed border-stone-200 px-3.5 py-3 text-sm text-stone-400">
-          Nothing here yet — add a photo, a story, or where they live.
+          Nothing here yet — add a story, a comment, or where they live.
         </p>
       )}
 
       {/* Inline editors */}
-      {editing === "photo" && (
+      {editing === "photo" && GALLERY_PHOTOS_ENABLED && (
         <PhotoEditor person={person} onDone={() => setEditing(null)} />
       )}
       {editing === "voice" && (

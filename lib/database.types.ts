@@ -582,6 +582,28 @@ export type Database = {
       }
       claim_person: { Args: { p_person_id: string }; Returns: undefined }
       create_family: { Args: { p_name: string }; Returns: string }
+      create_person_invite: {
+        Args: { p_person_id: string; p_days?: number }
+        Returns: string
+      }
+      peek_person_invite: {
+        Args: { p_token: string }
+        Returns: {
+          family_name: string
+          person_name: string
+          invited_by_name: string
+          expires_at: string
+        }[]
+      }
+      accept_person_invite: {
+        Args: {
+          p_token: string
+          p_name: string
+          p_birth_date?: string
+          p_current_city?: string
+        }
+        Returns: string
+      }
       is_family_creator: { Args: { p_family_id: string }; Returns: boolean }
       is_family_member: { Args: { p_family_id: string }; Returns: boolean }
       peek_invite: {

@@ -21,7 +21,7 @@ function LoginForm() {
   const raw = search.get("next");
   const next = raw && raw.startsWith("/") ? raw : "/dashboard";
   const authError = search.get("error");
-  const invited = next.startsWith("/join/");
+  const invited = next.startsWith("/invite/");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

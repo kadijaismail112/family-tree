@@ -20,18 +20,14 @@ import {
 const ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
 
 export default function DashboardPage() {
-  const { state, hydrated, currentUser, loadError, createFamily, joinFamilyByCode, signOut, refresh } =
+  const { state, hydrated, currentUser, loadError, createFamily, signOut, refresh } =
     useStore();
   const router = useRouter();
   const toast = useToast();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [joinOpen, setJoinOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  const [joinError, setJoinError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [joining, setJoining] = useState(false);
 
   const profile = useMemo(
     () => (currentUser ? computeProfile(state, currentUser.id) : null),
@@ -64,26 +60,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleJoin = async () => {
-    if (joining) return;
-    setJoining(true);
-    setJoinError(null);
-    try {
-      const res = await joinFamilyByCode(joinCode);
-      if (!res.ok) {
-        setJoinError(res.error ?? "Something went wrong.");
-        return;
-      }
-      setJoinOpen(false);
-      setJoinCode("");
-      toast("Welcome to the family!");
-      router.push(`/family/${res.familyId}`);
-    } catch (err) {
-      setJoinError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setJoining(false);
-    }
-  };
 
   const close = profile.closeCounts;
   const hasAnyStats =
@@ -123,9 +99,6 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex gap-2.5">
-            <GhostButton onClick={() => { setJoinOpen(true); setJoinError(null); }}>
-              Join with code
-            </GhostButton>
             <PrimaryButton onClick={() => setCreateOpen(true)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <path d="M12 5v14M5 12h14" />
@@ -348,33 +321,6 @@ export default function DashboardPage() {
         </form>
       </Modal>
 
-      <Modal
-        open={joinOpen}
-        onClose={() => setJoinOpen(false)}
-        title="Join a family"
-        subtitle="Paste the invite code a relative shared with you."
-      >
-        <form onSubmit={(e) => { e.preventDefault(); void handleJoin(); }} className="space-y-5">
-          <Field label="Invite code">
-            <input
-              autoFocus
-              className={`${inputCls} font-mono uppercase tracking-wider`}
-              placeholder="FAMILY-CODE"
-              value={joinCode}
-              onChange={(e) => { setJoinCode(e.target.value); setJoinError(null); }}
-            />
-          </Field>
-          {joinError && (
-            <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{joinError}</p>
-          )}
-          <div className="flex justify-end gap-2.5">
-            <GhostButton type="button" onClick={() => setJoinOpen(false)}>Cancel</GhostButton>
-            <PrimaryButton type="submit" disabled={!joinCode.trim() || joining}>
-              {joining ? "Joining…" : "Join family"}
-            </PrimaryButton>
-          </div>
-        </form>
-      </Modal>
     </main>
   );
 }

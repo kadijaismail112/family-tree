@@ -6,6 +6,7 @@ import { spousesOf } from "@/lib/helpers";
 import type { Gender, Person } from "@/lib/types";
 import { Field, GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
 import { PersonPicker } from "./PersonPicker";
+import { GeezInput } from "./GeezInput";
 
 const RELATION_OPTIONS = [
   { value: "child", label: "Child of" },
@@ -122,12 +123,11 @@ export function AddMemberModal({
         className="space-y-5"
       >
         <Field label="Full name">
-          <input
+          <GeezInput
             autoFocus
-            className={inputCls}
             placeholder="e.g. Rosa Delgado"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={setName}
           />
         </Field>
 

@@ -1,0 +1,54 @@
+import Link from "next/link";
+
+/** Shared shell for the policy pages, so they read as part of the product. */
+export default function LegalLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="min-h-screen bg-stone-50">
+      <header className="mx-auto flex max-w-2xl items-center justify-between px-6 py-6">
+        <Link
+          href="/"
+          className="font-display inline-flex items-center gap-2 text-lg font-semibold text-stone-900"
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#115e59"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="5" r="2.4" />
+            <circle cx="5.5" cy="18" r="2.4" />
+            <circle cx="18.5" cy="18" r="2.4" />
+            <path d="M12 7.4V12m0 0l-5 3.8M12 12l5 3.8" />
+          </svg>
+          Dynasty
+        </Link>
+        <Link
+          href="/"
+          className="text-sm font-medium text-stone-500 transition hover:text-stone-900"
+        >
+          Back
+        </Link>
+      </header>
+
+      <article className="legal mx-auto max-w-2xl px-6 pb-24">{children}</article>
+
+      <footer className="mx-auto flex max-w-2xl flex-wrap gap-x-5 gap-y-2 border-t border-stone-200 px-6 py-8 text-sm text-stone-400">
+        <Link href="/legal/privacy" className="transition hover:text-stone-700">
+          Privacy
+        </Link>
+        <Link href="/legal/terms" className="transition hover:text-stone-700">
+          Terms
+        </Link>
+        <span className="ml-auto">Your tree is private to your family.</span>
+      </footer>
+    </main>
+  );
+}

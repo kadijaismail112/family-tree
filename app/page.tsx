@@ -109,9 +109,15 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <footer className="mx-auto flex max-w-5xl items-center justify-between px-6 py-10 text-sm text-stone-400">
+      <footer className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-3 px-6 py-10 text-sm text-stone-400">
         <Logo muted />
-        <span>Your tree is private to your family.</span>
+        <Link href="/legal/privacy" className="transition hover:text-stone-700">
+          Privacy
+        </Link>
+        <Link href="/legal/terms" className="transition hover:text-stone-700">
+          Terms
+        </Link>
+        <span className="ml-auto">Your tree is private to your family.</span>
       </footer>
     </main>
   );

@@ -300,28 +300,68 @@ export function DangerButton({
   confirmLabel,
   onConfirm,
   className = "",
+  addedBy,
 }: {
   label: string;
   confirmLabel: string;
   onConfirm: () => void;
   className?: string;
+  /**
+   * Who contributed the thing being deleted, when it wasn't the person doing
+   * the deleting. Anyone in a family can remove anything, and deletion is
+   * permanent and cascades — so removing someone else's work asks for a
+   * deliberate second step rather than the tap-twice arming below.
+   */
+  addedBy?: string;
 }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
-    if (!armed) return;
+    if (!armed || addedBy) return; // the panel waits; the bare button times out
     const t = setTimeout(() => setArmed(false), 6000);
     return () => clearTimeout(t);
-  }, [armed]);
+  }, [armed, addedBy]);
+
+  if (addedBy && armed) {
+    return (
+      <div className="w-full rounded-xl border border-red-200 bg-red-50 p-3">
+        <p className="text-[13px] font-semibold text-red-900">
+          {confirmLabel}
+        </p>
+        <p className="mt-1 text-[12px] leading-relaxed text-red-800">
+          <span className="font-medium">{addedBy}</span> added this, not you.
+          Removing it is permanent and can&apos;t be undone.
+        </p>
+        <div className="mt-2.5 flex gap-2">
+          <button
+            onClick={() => setArmed(false)}
+            className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50"
+          >
+            Keep it
+          </button>
+          <button
+            onClick={() => {
+              setArmed(false);
+              onConfirm();
+            }}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500"
+          >
+            Remove anyway
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <button
-      onClick={() => (armed ? onConfirm() : setArmed(true))}
+      onClick={() => (armed && !addedBy ? onConfirm() : setArmed(true))}
       className={`rounded-xl px-3.5 py-2 text-sm font-medium transition ${
         armed
           ? "bg-red-600 text-white hover:bg-red-500"
           : "text-red-600 hover:bg-red-50"
       } ${className}`}
     >
-      {armed ? confirmLabel : label}
+      {armed && !addedBy ? confirmLabel : label}
     </button>
   );
 }

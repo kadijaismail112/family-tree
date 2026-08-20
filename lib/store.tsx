@@ -24,12 +24,12 @@ import type {
 } from "./types";
 import { createClient } from "@/lib/supabase/client";
 import { EMPTY_STORE, loadStore } from "@/lib/supabase/load";
+import { GALLERY_PHOTOS_ENABLED } from "./features";
 import {
   emptyToNull,
   friendlyError,
   mapComment,
   mapEdit,
-  mapInvite,
   mapPerson,
   mapPhoto,
   mapRelationship,
@@ -63,13 +63,20 @@ interface StoreApi {
   signOut: () => Promise<void>;
 
   createFamily: (name: string) => Promise<string>;
-  joinFamilyByCode: (
-    code: string
+  /** Mint a share link inviting one relative to claim their own node. */
+  createPersonInvite: (personId: string, days?: number) => Promise<string>;
+  /** Read an invite without a session — what the recipient sees before signing up. */
+  peekPersonInvite: (token: string) => Promise<{
+    familyName: string;
+    personName: string;
+    invitedByName: string;
+    expiresAt: string;
+  } | null>;
+  /** Join, claim the node and save the details they gave us, in one call. */
+  acceptPersonInvite: (
+    token: string,
+    profile: { name: string; birthDate?: string; currentCity?: string }
   ) => Promise<{ ok: boolean; familyId?: string; error?: string }>;
-  peekInvite: (
-    code: string
-  ) => Promise<{ familyId: string; familyName: string; memberCount: number } | null>;
-  createInvite: (familyId: string) => Promise<string>;
 
   addPerson: (familyId: string, input: AddPersonInput) => Promise<Person>;
   updatePerson: (
@@ -194,15 +201,18 @@ function personFromRow(
   };
 }
 
-function makeInviteCode(name: string) {
-  const slug = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .split("-")[0]
-    .slice(0, 8);
-  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${slug || "FAMILY"}-${suffix}`;
+/** How long a personal invite stays good for, unless a caller says otherwise. */
+export const INVITE_DAYS = 14;
+
+/**
+ * The link that gets texted or emailed. Built from the live origin so it is
+ * right in local development, on a preview deployment, and in production
+ * without anything to configure.
+ */
+function inviteUrl(token: string) {
+  const origin =
+    typeof window === "undefined" ? "https://www.trydynasty.app" : window.location.origin;
+  return `${origin}/invite/${token}`;
 }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
@@ -321,78 +331,77 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [refresh]
   );
 
-  const joinFamilyByCode = useCallback(
-    async (code: string) => {
+  /**
+   * Mint a link inviting one specific relative to claim their own node.
+   *
+   * The token is generated in the database from a cryptographic source — the
+   * client never proposes it — and re-inviting the same person supersedes any
+   * link still sitting unread in an older message.
+   */
+  const createPersonInvite = useCallback(
+    async (personId: string, days = INVITE_DAYS) => {
       const supabase = createClient();
-      const { data, error } = await supabase.rpc("accept_invite", {
-        p_code: code.trim(),
+      const { data, error } = await supabase.rpc("create_person_invite", {
+        p_person_id: personId,
+        p_days: days,
       });
       if (error || !data) {
-        return {
-          ok: false,
-          error: friendlyError(error?.message ?? "No family found for that invite code."),
-        };
+        throw new Error(friendlyError(error?.message ?? "Couldn't create that invite."));
       }
-      await refresh();
-      return { ok: true, familyId: data };
+      return inviteUrl(data);
     },
-    [refresh]
+    []
   );
 
-  const peekInvite = useCallback(async (code: string) => {
+  /**
+   * What the recipient sees before deciding to sign up. Runs anonymously, so
+   * it is the one invite call that works without a session.
+   */
+  const peekPersonInvite = useCallback(async (token: string) => {
     const supabase = createClient();
-    const { data, error } = await supabase.rpc("peek_invite", {
-      p_code: code.trim(),
+    const { data, error } = await supabase.rpc("peek_person_invite", {
+      p_token: token.trim(),
     });
-    // No rows means no such invite. An error means we don't know yet, and the
-    // caller must be able to tell those apart before telling someone their
-    // invite is dead.
+    // An invalid invite and an unreachable server are different answers, and
+    // the caller has to be able to tell them apart before telling someone
+    // their perfectly good link is dead.
     if (error) throw new Error(friendlyError(error.message));
     if (!data?.[0]) return null;
     const row = data[0];
     return {
-      familyId: row.family_id,
       familyName: row.family_name,
-      memberCount: Number(row.member_count),
+      personName: row.person_name,
+      invitedByName: row.invited_by_name,
+      expiresAt: row.expires_at,
     };
   }, []);
 
-  const createInvite = useCallback(
-    async (familyId: string) => {
+  /**
+   * Join, claim the node, and save what they told us — one call, because
+   * these only make sense together.
+   */
+  const acceptPersonInvite = useCallback(
+    async (
+      token: string,
+      profile: { name: string; birthDate?: string; currentCity?: string }
+    ) => {
       const supabase = createClient();
-      const { data: existing } = await supabase
-        .from("invites")
-        .select("code")
-        .eq("family_id", familyId)
-        .eq("revoked", false)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (existing?.code) return existing.code;
-
-      const family = state.families.find((f) => f.id === familyId);
-      let lastError = "Couldn't create an invite code.";
-      for (let i = 0; i < 5; i++) {
-        const code = makeInviteCode(family?.name ?? "family");
-        const { data, error } = await supabase
-          .from("invites")
-          .insert({ family_id: familyId, code, created_by: userId })
-          .select()
-          .single();
-        if (!error && data) {
-          setState((s) => ({ ...s, invites: upsert(s.invites, mapInvite(data)) }));
-          return data.code;
-        }
-        // Only a code collision is worth another spin of the loop; anything
-        // else will fail identically five times and hide the real reason.
-        if (error && error.code !== "23505") {
-          throw new Error(friendlyError(error.message, error.code));
-        }
-        if (error) lastError = friendlyError(error.message, error.code);
+      const { data, error } = await supabase.rpc("accept_person_invite", {
+        p_token: token.trim(),
+        p_name: profile.name.trim(),
+        p_birth_date: profile.birthDate?.trim() || undefined,
+        p_current_city: profile.currentCity?.trim() || undefined,
+      });
+      if (error || !data) {
+        return {
+          ok: false as const,
+          error: friendlyError(error?.message ?? "Couldn't accept that invite."),
+        };
       }
-      throw new Error(lastError);
+      await refresh();
+      return { ok: true as const, familyId: data };
     },
-    [state.families, userId]
+    [refresh]
   );
 
   const addPerson = useCallback(
@@ -960,6 +969,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       caption?: string;
       taggedPersonIds: string[];
     }) => {
+      // Guarded here as well as in the UI: this is the unbounded upload path,
+      // and a stale tab or a direct call shouldn't get around the switch.
+      if (!GALLERY_PHOTOS_ENABLED) {
+        throw new Error("Adding photos is turned off for now.");
+      }
       const supabase = createClient();
       const blob = await sourceToBlob(input.dataUrl);
       const storage_path = await uploadFamilyFile(
@@ -1100,9 +1114,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     refresh,
     signOut,
     createFamily,
-    joinFamilyByCode,
-    peekInvite,
-    createInvite,
+    createPersonInvite,
+    peekPersonInvite,
+    acceptPersonInvite,
     addPerson,
     updatePerson,
     deletePerson,

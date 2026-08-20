@@ -35,6 +35,7 @@ import {
   useToast,
 } from "./ui";
 import { PersonExtras } from "./PersonExtras";
+import { GeezInput } from "./GeezInput";
 
 export function DetailPanel({
   selection,
@@ -42,6 +43,7 @@ export function DetailPanel({
   onSelectPerson,
   onSelectRelationship,
   onAddRelative,
+  onInvite,
   onAddChildren,
   onConnectFrom,
   mePersonId,
@@ -57,6 +59,7 @@ export function DetailPanel({
   onSelectPerson: (id: string) => void;
   onSelectRelationship: (id: string) => void;
   onAddRelative: (anchorId: string) => void;
+  onInvite: (personId: string) => void;
   onAddChildren: (parentId: string) => void;
   onConnectFrom: (personId: string) => void;
   mePersonId: string | null;
@@ -107,6 +110,7 @@ export function DetailPanel({
             onSelectRelationship={onSelectRelationship}
             onSelectPerson={onSelectPerson}
             onAddRelative={onAddRelative}
+            onInvite={onInvite}
             onAddChildren={onAddChildren}
             onConnectFrom={onConnectFrom}
             onClose={onClose}
@@ -138,6 +142,7 @@ function PersonDetail({
   onSelectRelationship,
   onSelectPerson,
   onAddRelative,
+  onInvite,
   onAddChildren,
   onConnectFrom,
   onClose,
@@ -153,6 +158,7 @@ function PersonDetail({
   onSelectRelationship: (id: string) => void;
   onSelectPerson: (id: string) => void;
   onAddRelative: (anchorId: string) => void;
+  onInvite: (personId: string) => void;
   onAddChildren: (parentId: string) => void;
   onConnectFrom: (personId: string) => void;
   onClose: () => void;
@@ -690,6 +696,16 @@ function PersonDetail({
             <GhostButton onClick={() => onConnectFrom(person.id)} className="!px-3 !py-2 text-xs">
               Connect to someone
             </GhostButton>
+            {/* Only for a node nobody has claimed — you cannot invite someone
+                who is already in the tree with an account of their own. */}
+            {!person.accountUserId && (
+              <GhostButton
+                onClick={() => onInvite(person.id)}
+                className="!px-3 !py-2 text-xs !border-teal-700/30 !text-teal-800 hover:!bg-teal-800/5"
+              >
+                Invite {person.name.split(" ")[0]}
+              </GhostButton>
+            )}
           </div>
           <div className="mt-2 flex items-center justify-between">
             <button
@@ -700,7 +716,12 @@ function PersonDetail({
             </button>
             <DangerButton
               label="Remove"
-              confirmLabel={`Really remove${rels.length ? ` (+${rels.length} connection${rels.length > 1 ? "s" : ""})` : ""}?`}
+              confirmLabel={`Remove ${person.name}${rels.length ? ` and ${rels.length} connection${rels.length > 1 ? "s" : ""}` : ""}?`}
+              addedBy={
+                currentUser && person.addedById !== currentUser.id
+                  ? userName(state, person.addedById)
+                  : undefined
+              }
               onConfirm={() =>
                 void run(() => deletePerson(person.id), {
                   failure: `Couldn't remove ${person.name}`,
@@ -738,10 +759,9 @@ function PersonDetail({
           </div>
 
           <Field label="Full name">
-            <input
-              className={inputCls}
+            <GeezInput
               value={draft.name}
-              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              onChange={(name) => setDraft((d) => ({ ...d, name }))}
             />
           </Field>
 
@@ -1064,7 +1084,12 @@ function RelationshipDetail({
       <div className="mt-5 flex justify-end border-t border-stone-100 pt-3">
         <DangerButton
           label="Remove connection"
-          confirmLabel="Really remove it?"
+          confirmLabel="Remove this connection?"
+          addedBy={
+            currentUser && relationship.addedById !== currentUser.id
+              ? userName(state, relationship.addedById)
+              : undefined
+          }
           onConfirm={() =>
             void run(() => deleteRelationship(relationship.id), {
               failure: "Couldn't remove that connection",

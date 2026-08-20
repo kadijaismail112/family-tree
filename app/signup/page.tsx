@@ -16,7 +16,7 @@ function SignupForm() {
   // signing up and land on an empty dashboard with no way back to the family.
   const raw = search.get("next");
   const next = raw && raw.startsWith("/") ? raw : "/dashboard";
-  const invited = next.startsWith("/join/");
+  const invited = next.startsWith("/invite/");
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -24,8 +24,15 @@ function SignupForm() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   const submit = async () => {
+    // The button is disabled without this, but a form can still be submitted
+    // by pressing Enter in a field, so the guard has to live here too.
+    if (!accepted) {
+      setError("Please accept the Terms and Privacy Policy to continue.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setInfo(null);
@@ -101,6 +108,37 @@ function SignupForm() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
+        {/* Consent is its own step rather than fine print under the button:
+            these trees hold other people's information, so the terms are
+            something to read, not something to have implicitly agreed to. */}
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-stone-200 px-3.5 py-3 transition hover:border-stone-300">
+          <input
+            type="checkbox"
+            checked={accepted}
+            onChange={(e) => setAccepted(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-teal-800"
+          />
+          <span className="text-[13px] leading-relaxed text-stone-600">
+            I have read and agree to the{" "}
+            <Link
+              href="/legal/terms"
+              target="_blank"
+              className="font-medium text-teal-800 underline decoration-teal-700/30 underline-offset-2"
+            >
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link
+              href="/legal/privacy"
+              target="_blank"
+              className="font-medium text-teal-800 underline decoration-teal-700/30 underline-offset-2"
+            >
+              Privacy Policy
+            </Link>
+            , including my responsibility for information I record about my
+            relatives.
+          </span>
+        </label>
         {error && (
           <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</p>
         )}
@@ -109,7 +147,7 @@ function SignupForm() {
         )}
         <PrimaryButton
           type="submit"
-          disabled={busy || !name.trim() || !email || password.length < 6}
+          disabled={busy || !name.trim() || !email || password.length < 6 || !accepted}
           className="w-full"
         >
           {busy ? "Creating account…" : "Create account"}

@@ -17,7 +17,7 @@ import { DetailPanel } from "@/components/DetailPanel";
 import { AddMemberModal } from "@/components/AddMemberModal";
 import { AddChildrenModal } from "@/components/AddChildrenModal";
 import { ConnectModal } from "@/components/ConnectModal";
-import { InviteModal } from "@/components/InviteModal";
+import { InvitePersonModal } from "@/components/InvitePersonModal";
 import { ReviewModal } from "@/components/ReviewModal";
 import dynamic from "next/dynamic";
 import { RelationshipModal } from "@/components/RelationshipModal";
@@ -80,6 +80,9 @@ export default function FamilyPage() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectFromId, setConnectFromId] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Set when the invite is opened from a specific relative; left undefined
+  // from the toolbar, where the modal asks who first.
+  const [invitePersonId, setInvitePersonId] = useState<string | undefined>(undefined);
   const [membersOpen, setMembersOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -352,7 +355,7 @@ export default function FamilyPage() {
             </button>
           )}
 
-          <GhostButton onClick={() => setInviteOpen(true)} className="hidden !px-3 !py-2 text-xs sm:inline-flex sm:text-sm">
+          <GhostButton onClick={() => { setInvitePersonId(undefined); setInviteOpen(true); }} className="hidden !px-3 !py-2 text-xs sm:inline-flex sm:text-sm">
             Invite
           </GhostButton>
 
@@ -395,7 +398,7 @@ export default function FamilyPage() {
                     <span className="text-xs text-stone-400">{members.length}</span>
                   </button>
                   <button
-                    onClick={() => { setMobileMenu(false); setInviteOpen(true); }}
+                    onClick={() => { setMobileMenu(false); setInvitePersonId(undefined); setInviteOpen(true); }}
                     className="w-full px-3.5 py-2.5 text-left text-sm text-stone-700 transition hover:bg-stone-50"
                   >
                     Invite someone
@@ -649,6 +652,10 @@ export default function FamilyPage() {
               onClose={() => setSelection(null)}
               onSelectPerson={selectPerson}
               onSelectRelationship={(id) => setSelection({ kind: "relationship", id })}
+              onInvite={(id) => {
+                setInvitePersonId(id);
+                setInviteOpen(true);
+              }}
               mePersonId={mePersonId}
               meModeOn={meMode}
               onToggleMeMode={() => setMeMode((m) => !m)}
@@ -706,11 +713,11 @@ export default function FamilyPage() {
         initialFromId={connectFromId}
         mePersonId={mePersonId}
       />
-      <InviteModal
+      <InvitePersonModal
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         familyId={familyId}
-        familyName={family.name}
+        personId={invitePersonId}
       />
       <ReviewModal
         open={reviewOpen}
@@ -821,6 +828,7 @@ export default function FamilyPage() {
           <PrimaryButton
             onClick={() => {
               setMembersOpen(false);
+              setInvitePersonId(undefined);
               setInviteOpen(true);
             }}
           >
