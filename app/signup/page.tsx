@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { AuthShell } from "@/components/AuthShell";
 import { DevBypassButton } from "@/components/DevBypassButton";
 import { Field, inputCls, PrimaryButton } from "@/components/ui";
+import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
 
 function SignupForm() {
@@ -25,6 +26,8 @@ function SignupForm() {
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [captcha, setCaptcha] = useState<string | undefined>();
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const submit = async () => {
     // The button is disabled without this, but a form can still be submitted
@@ -44,11 +47,14 @@ function SignupForm() {
       options: {
         emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
         data: { display_name: name.trim() },
+        captchaToken: captcha,
       },
     });
     setBusy(false);
     if (err) {
       setError(err.message);
+      // The token is spent either way, so a retry needs a fresh one.
+      setCaptchaKey((k) => k + 1);
       return;
     }
     if (data.session) {
@@ -145,6 +151,7 @@ function SignupForm() {
         {info && (
           <p className="rounded-xl bg-teal-800/5 px-3.5 py-2.5 text-sm text-teal-900">{info}</p>
         )}
+        <Turnstile onToken={setCaptcha} resetKey={captchaKey} />
         <PrimaryButton
           type="submit"
           disabled={busy || !name.trim() || !email || password.length < 6 || !accepted}

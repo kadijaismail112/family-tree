@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { AuthShell } from "@/components/AuthShell";
 import { DevBypassButton } from "@/components/DevBypassButton";
 import { Field, inputCls, PrimaryButton } from "@/components/ui";
+import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
 
 // Why the email link didn't work, in terms of what to do about it.
@@ -29,15 +30,23 @@ function LoginForm() {
     authError ? AUTH_ERRORS[authError] ?? AUTH_ERRORS.expired : null
   );
   const [busy, setBusy] = useState(false);
+  const [captcha, setCaptcha] = useState<string | undefined>();
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     const supabase = createClient();
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: err } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: captcha },
+    });
     setBusy(false);
     if (err) {
       setError(err.message);
+      // The token is spent either way, so a retry needs a fresh one.
+      setCaptchaKey((k) => k + 1);
       return;
     }
     router.replace(next);
@@ -82,6 +91,7 @@ function LoginForm() {
         {error && (
           <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</p>
         )}
+        <Turnstile onToken={setCaptcha} resetKey={captchaKey} />
         <PrimaryButton type="submit" disabled={busy || !email || !password} className="w-full">
           {busy ? "Signing in…" : "Sign in"}
         </PrimaryButton>
