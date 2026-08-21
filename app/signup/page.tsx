@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AuthShell } from "@/components/AuthShell";
-import { DevBypassButton } from "@/components/DevBypassButton";
 import { Field, inputCls, PrimaryButton } from "@/components/ui";
 import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
@@ -169,7 +168,6 @@ function SignupForm() {
           </Link>
         </p>
       </form>
-      <DevBypassButton next={next} />
     </AuthShell>
   );
 }
