@@ -49,7 +49,7 @@ export function DevBypassButton({ next = "/dashboard" }: { next?: string }) {
         {busy ? "Signing in…" : "Dev mode — skip login"}
       </button>
       <p className="mt-2 text-center text-[11px] text-stone-400">
-        Development only. Signs you in as a local test account.
+        Development only. Needs DEV_LOGIN_PASSWORD set in .env.local.
       </p>
       {error && (
         <p className="mt-2 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
