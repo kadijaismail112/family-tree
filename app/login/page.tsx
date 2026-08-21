@@ -7,6 +7,7 @@ import { AuthShell } from "@/components/AuthShell";
 import { Field, inputCls, PrimaryButton } from "@/components/ui";
 import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
+import { safeNext } from "@/lib/safeNext";
 
 // Why the email link didn't work, in terms of what to do about it.
 const AUTH_ERRORS: Record<string, string> = {
@@ -18,8 +19,7 @@ const AUTH_ERRORS: Record<string, string> = {
 function LoginForm() {
   const router = useRouter();
   const search = useSearchParams();
-  const raw = search.get("next");
-  const next = raw && raw.startsWith("/") ? raw : "/dashboard";
+  const next = safeNext(search.get("next"));
   const authError = search.get("error");
   const invited = next.startsWith("/invite/");
 

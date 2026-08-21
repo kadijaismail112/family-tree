@@ -7,6 +7,7 @@ import { AuthShell } from "@/components/AuthShell";
 import { Field, inputCls, PrimaryButton } from "@/components/ui";
 import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
+import { safeNext } from "@/lib/safeNext";
 
 function SignupForm() {
   const router = useRouter();
@@ -14,8 +15,7 @@ function SignupForm() {
   // Most people meet this app through an invite link, and the invite has to
   // survive the detour through account creation — otherwise they finish
   // signing up and land on an empty dashboard with no way back to the family.
-  const raw = search.get("next");
-  const next = raw && raw.startsWith("/") ? raw : "/dashboard";
+  const next = safeNext(search.get("next"));
   const invited = next.startsWith("/invite/");
 
   const [name, setName] = useState("");
