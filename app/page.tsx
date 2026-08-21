@@ -42,14 +42,19 @@ export default function LandingPage() {
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
         <Logo />
         <div className="flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-sm font-medium text-stone-600 transition hover:text-stone-900"
-          >
-            Sign in
-          </Link>
+          {/* Two doors, and the wording says which is which: "Sign up" for
+              people who don't have an account yet, "Open your trees" for
+              people who do — the phrase only makes sense if you already have
+              some. Both pages link across to the other, so landing on the
+              wrong one costs a click, not a dead end. */}
           <Link
             href="/signup"
+            className="text-sm font-medium text-stone-600 transition hover:text-stone-900"
+          >
+            Sign up
+          </Link>
+          <Link
+            href="/login"
             className="rounded-xl bg-teal-800 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
           >
             Open your trees
