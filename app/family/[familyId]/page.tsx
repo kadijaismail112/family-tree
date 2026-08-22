@@ -225,8 +225,13 @@ export default function FamilyPage() {
     flyTo(id);
   };
 
+  // h-screen first, h-dvh second: dvh only arrived in iOS 15.4, and where it
+  // isn't understood the whole declaration is dropped — leaving <main> with no
+  // height at all, which collapses the canvas and the sheet inside it. The
+  // older unit is a worse answer than dvh but an infinitely better one than
+  // none.
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-stone-50">
+    <main className="flex h-screen h-[100dvh] flex-col overflow-hidden bg-stone-50">
       {/* ─── Header ─── */}
       <header className="z-20 border-b border-stone-200/70 bg-white">
         <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3">
@@ -647,8 +652,9 @@ export default function FamilyPage() {
                 Every tree starts with one person.
               </p>
               <p className="mt-2 text-sm leading-relaxed text-stone-500">
-                Add yourself, a grandparent, anyone — then branch out from there.
-                The rest of the family can help once you invite them.
+                Add yourself first — or a grandparent you remember — and mark
+                the person who is you. Then branch out. The rest of the family
+                can help once you invite them.
               </p>
               <PrimaryButton
                 onClick={() => {
@@ -739,11 +745,22 @@ export default function FamilyPage() {
               key={v.key}
               type="button"
               onClick={() => setViewMode(v.key)}
-              className={`px-2 py-2.5 text-sm font-semibold ${
-                viewMode === v.key ? "text-teal-800" : "text-stone-400"
+              aria-current={viewMode === v.key ? "page" : undefined}
+              // min-h-11 is the ~44px Apple asks for. At py-2.5 these were
+              // nearer 40 and sat right above the home indicator, which is a
+              // bad combination on a phone.
+              className={`flex min-h-11 items-center justify-center px-2 text-sm font-semibold transition ${
+                viewMode === v.key
+                  ? "text-teal-800"
+                  : "text-stone-400 active:text-stone-600"
               }`}
             >
-              {v.label}
+              <span className="relative">
+                {v.label}
+                {viewMode === v.key && (
+                  <span className="absolute -bottom-1.5 left-0 right-0 h-0.5 rounded-full bg-teal-800" />
+                )}
+              </span>
             </button>
           ))}
         </div>
