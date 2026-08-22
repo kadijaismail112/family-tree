@@ -5,6 +5,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { findPath, personMatch, personMatches, timeAgo } from "@/lib/helpers";
+import { useNarrow } from "@/lib/useNarrow";
 import { allSuggestions } from "@/lib/suggestions";
 import { CLUSTER_OPTIONS, type ClusterKey } from "@/lib/cluster";
 import {
@@ -14,7 +15,6 @@ import {
   type ViewMode,
 } from "@/components/TreeCanvas";
 import { DetailPanel } from "@/components/DetailPanel";
-import { BetaGate } from "@/components/BetaGate";
 import { AddMemberModal } from "@/components/AddMemberModal";
 import { AddChildrenModal } from "@/components/AddChildrenModal";
 import { ConnectModal } from "@/components/ConnectModal";
@@ -96,6 +96,8 @@ export default function FamilyPage() {
   const [mobileSearch, setMobileSearch] = useState(false);
   const toast = useToast();
   const { run } = useAction();
+  const narrow = useNarrow();
+  const [clustersHint, setClustersHint] = useState(true);
 
   const family = state.families.find((f) => f.id === familyId);
   // the lightest possible moderation: whoever started the tree can remove members
@@ -224,7 +226,7 @@ export default function FamilyPage() {
   };
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-stone-50">
+    <main className="flex h-dvh flex-col overflow-hidden bg-stone-50">
       {/* ─── Header ─── */}
       <header className="z-20 border-b border-stone-200/70 bg-white">
         <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3">
@@ -424,6 +426,13 @@ export default function FamilyPage() {
                   >
                     Invite someone
                   </button>
+                  <Link
+                    href="/settings"
+                    onClick={() => setMobileMenu(false)}
+                    className="block w-full px-3.5 py-2.5 text-left text-sm text-stone-700 transition hover:bg-stone-50"
+                  >
+                    Account settings
+                  </Link>
                 </div>
               </>
             )}
@@ -444,43 +453,56 @@ export default function FamilyPage() {
           </PrimaryButton>
         </div>
 
-        {/* full-width search row on phones */}
-        {mobileSearch && (
-          <div className="relative border-t border-stone-100 px-3 py-2 md:hidden">
+      </header>
+
+      {mobileSearch && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white pt-[env(safe-area-inset-top)] md:hidden">
+          <div className="flex items-center gap-2 border-b border-stone-100 px-3 py-2">
             <input
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Find someone by name, city, college…"
-              className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm outline-none transition placeholder:text-stone-400 focus:border-teal-600 focus:bg-white"
+              className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm outline-none transition placeholder:text-stone-400 focus:border-teal-600 focus:bg-white"
             />
-            {searchResults.length > 0 && (
-              <ul className="absolute left-3 right-3 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
-                {searchResults.map(({ person: p, hint }) => (
-                  <li key={p.id}>
-                    <button
-                      onClick={() => {
-                        selectPerson(p.id);
-                        setSearch("");
-                        setMobileSearch(false);
-                      }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-stone-50"
-                    >
-                      <Avatar name={p.name} id={p.name} size={28} src={p.photoUrl} />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm text-stone-700">{p.name}</span>
-                        {hint && (
-                          <span className="block truncate text-[11px] text-stone-400">{hint}</span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setMobileSearch(false);
+                setSearch("");
+              }}
+              className="shrink-0 px-2 py-2 text-sm font-semibold text-teal-800"
+            >
+              Cancel
+            </button>
           </div>
-        )}
-      </header>
+          <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+            {search.trim() && searchResults.length === 0 && (
+              <li className="px-5 py-8 text-sm text-stone-400">No one matches that.</li>
+            )}
+            {searchResults.map(({ person: p, hint }) => (
+              <li key={p.id}>
+                <button
+                  onClick={() => {
+                    selectPerson(p.id);
+                    setSearch("");
+                    setMobileSearch(false);
+                  }}
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-stone-50"
+                >
+                  <Avatar name={p.name} id={p.name} size={36} src={p.photoUrl} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-stone-800">{p.name}</span>
+                    {hint && (
+                      <span className="block truncate text-xs text-stone-400">{hint}</span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* ─── Canvas ─── */}
       <div className="relative min-h-0 flex-1">
@@ -507,7 +529,7 @@ export default function FamilyPage() {
             mode={viewMode}
             clusterKey={clusterKey}
             isolateId={isolatedId}
-            rightInset={selection ? 356 : 0}
+            rightInset={selection && !narrow ? 356 : 0}
             onQuickAdd={(id) => {
               setAddAnchorId(id);
               setAddOpen(true);
@@ -579,24 +601,27 @@ export default function FamilyPage() {
 
         {/* Shown on every visit, not once: this warns that what's on screen
             may be wrong, and that stays true however many times you've seen it. */}
-        {viewMode === "clusters" && (
-          <BetaGate title="Clusters is in beta">
-            <p>
-              This view regroups your family by city, school, work or decade
-              born. It works, but it&apos;s the newest part of Dynasty and the
-              grouping can be rough around the edges — especially where details
-              are only half filled in.
+        {viewMode === "clusters" && clustersHint && (
+          <div className="absolute inset-x-3 top-3 z-10 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:inset-x-auto sm:left-4 sm:right-4 sm:max-w-md">
+            <p className="min-w-0 text-xs leading-relaxed text-amber-900">
+              Clusters is in beta — grouping can be rough where details are
+              half filled in. Nothing here changes your tree.
             </p>
-            <p className="mt-2">
-              Nothing here changes your tree. It&apos;s a different way of
-              looking at the same people.
-            </p>
-          </BetaGate>
+            <button
+              type="button"
+              onClick={() => setClustersHint(false)}
+              className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-amber-900"
+            >
+              OK
+            </button>
+          </div>
         )}
 
         {/* Cluster-by picker */}
         {viewMode === "clusters" && (
-          <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-2.5 py-1.5 shadow-sm backdrop-blur sm:left-4 sm:top-4 sm:px-3 sm:py-2">
+          <div className={`absolute left-3 z-10 flex items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-2.5 py-1.5 shadow-sm backdrop-blur sm:left-4 sm:px-3 sm:py-2 ${
+              clustersHint ? "top-16 sm:top-20" : "top-3 sm:top-4"
+            }`}>
             <span className="hidden text-xs font-semibold uppercase tracking-wider text-stone-400 sm:inline">
               Cluster by
             </span>
@@ -659,32 +684,11 @@ export default function FamilyPage() {
           </div>
         )}
 
-        {/* View switcher, thumb-height on phones */}
-        {!selection && (
-          <div
-            // the map's city drawer owns the bottom of the screen, so the
-            // switcher rides above it rather than sitting on top of a row
-            className={`pointer-events-auto absolute left-1/2 z-10 flex -translate-x-1/2 items-center rounded-full border border-stone-200/80 bg-white/95 p-1 shadow-lg backdrop-blur sm:hidden ${
-              viewMode === "map" ? "bottom-[calc(46%_+_0.75rem)]" : "bottom-4"
-            }`}
-          >
-            {VIEWS.map((v) => (
-              <button
-                key={v.key}
-                onClick={() => setViewMode(v.key)}
-                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
-                  viewMode === v.key ? "bg-teal-800 text-white" : "text-stone-500"
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Detail panel */}
+        {/* Detail panel — explicit height so the inner overflow-y-auto is a
+            real scrollport. max-h alone let the card grow and handed swipes
+            to the canvas underneath. */}
         {selection && (
-          <div className="absolute inset-x-0 bottom-0 z-20 max-h-[72%] sm:inset-x-auto sm:bottom-4 sm:right-4 sm:top-4 sm:max-h-none sm:p-0">
+          <div className="absolute inset-x-0 bottom-0 z-20 flex h-[72%] max-h-full flex-col overflow-hidden overscroll-contain sm:inset-x-auto sm:bottom-4 sm:right-4 sm:top-4 sm:h-auto sm:max-h-none">
             <DetailPanel
               selection={selection}
               onClose={() => setSelection(null)}
@@ -724,6 +728,26 @@ export default function FamilyPage() {
           </div>
         )}
       </div>
+
+      <nav
+        aria-label="Views"
+        className="z-20 shrink-0 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden"
+      >
+        <div className="grid grid-cols-3">
+          {VIEWS.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => setViewMode(v.key)}
+              className={`px-2 py-2.5 text-sm font-semibold ${
+                viewMode === v.key ? "text-teal-800" : "text-stone-400"
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       {/* ─── Modals ─── */}
       <AddMemberModal

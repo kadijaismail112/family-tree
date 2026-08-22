@@ -85,7 +85,7 @@ export function PersonPicker({
                 setOpen(false);
                 onPickFromTree();
               }}
-              className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-800/10"
+              className="hidden items-center gap-1 rounded-lg px-1.5 py-0.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-800/10 sm:flex"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 3h6v6H3zM15 15h6v6h-6zM6 9v6h9" />

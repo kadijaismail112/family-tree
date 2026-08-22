@@ -35,6 +35,7 @@ export function GlobeView({
   // every name being drawn at once.
   const [hovered, setHovered] = useState<string | null>(null);
   const [spinning, setSpinning] = useState(true);
+  const [listOpen, setListOpen] = useState(false);
   const drag = useRef<{ x: number; y: number; rot: [number, number] } | null>(null);
 
   // The globe renders immediately off the built-in gazetteer, then re-groups
@@ -120,11 +121,12 @@ export function GlobeView({
   const spinTo = (g: CityGroup) => {
     setSpinning(false);
     setActive(g);
+    setListOpen(true);
     setRotation([-g.city.lon, -g.city.lat]);
   };
 
   return (
-    <div className="flex h-full w-full">
+    <div className="relative flex h-full w-full">
       {/* Globe */}
       <div
         ref={wrapRef}
@@ -220,19 +222,41 @@ export function GlobeView({
         </div>
       </div>
 
-      {/* Side list — a drawer on phones, a column on desktop */}
-      <aside className="absolute inset-x-0 bottom-0 z-10 flex max-h-[46%] flex-col overflow-y-auto border-t border-stone-200/70 bg-white md:static md:inset-auto md:max-h-none md:w-72 md:shrink-0 md:border-l md:border-t-0">
-        <div className="border-b border-stone-100 px-5 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-stone-400">
-            Where the family lives
-          </p>
-          <p className="mt-0.5 text-sm text-stone-600">
-            {groups.length} {groups.length === 1 ? "city" : "cities"} ·{" "}
-            {groups.reduce((n, g) => n + g.people.length, 0)} people
-          </p>
-        </div>
+      {/* Peek bar on phones; full column on desktop. A permanent 46% drawer
+          left no room for the globe once the person sheet was also open. */}
+      <aside
+        className={`absolute inset-x-0 bottom-0 z-10 flex flex-col border-t border-stone-200/70 bg-white md:static md:inset-auto md:h-full md:w-72 md:shrink-0 md:border-l md:border-t-0 ${
+          listOpen ? "max-h-[40%]" : ""
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => setListOpen((o) => !o)}
+          className="flex w-full items-center justify-between px-5 py-3 text-left md:pointer-events-none"
+        >
+          <span>
+            <span className="block text-xs font-semibold uppercase tracking-wider text-stone-400">
+              Where the family lives
+            </span>
+            <span className="mt-0.5 block text-sm text-stone-600">
+              {groups.length} {groups.length === 1 ? "city" : "cities"} ·{" "}
+              {groups.reduce((n, g) => n + g.people.length, 0)} people
+            </span>
+          </span>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className={`shrink-0 text-stone-400 transition md:hidden ${listOpen ? "rotate-180" : ""}`}
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
 
-        <ul className="p-2">
+        <ul className={`min-h-0 overflow-y-auto overscroll-contain p-2 ${listOpen ? "block" : "hidden"} md:block`}>
           {groups.map((g) => (
             <li key={g.city.name}>
               <button
@@ -282,7 +306,7 @@ export function GlobeView({
         </ul>
 
         {(unplaced.length > 0 || without > 0) && (
-          <div className="mt-auto border-t border-stone-100 px-5 py-3">
+          <div className={`mt-auto border-t border-stone-100 px-5 py-3 ${listOpen ? "block" : "hidden"} md:block`}>
             {unplaced.length > 0 && (
               <>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">

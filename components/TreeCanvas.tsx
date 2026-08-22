@@ -571,7 +571,11 @@ function CanvasInner({
       proOptions={{ hideAttribution: true }}
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="#d6d3d1" />
-      <Controls showInteractive={false} position="bottom-right" className="!bottom-20 sm:!bottom-4" />
+      <Controls
+        showInteractive={false}
+        position="top-left"
+        className="!left-3 !top-3 sm:!bottom-4 sm:!left-auto sm:!right-4 sm:!top-auto"
+      />
       {/* The detail panel opens over the top-right corner, so a minimap
           pinned there was invisible for as long as anyone was actually
           reading someone's details. It steps aside instead. Its nodes carry

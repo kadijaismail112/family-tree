@@ -59,6 +59,16 @@ export function Modal({
     };
   }, [open]);
 
+  const [vvh, setVvh] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open || typeof window === "undefined" || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const apply = () => setVvh(vv.height);
+    apply();
+    vv.addEventListener("resize", apply);
+    return () => vv.removeEventListener("resize", apply);
+  }, [open]);
+
   if (!open) return null;
   return (
     <div
@@ -71,7 +81,8 @@ export function Modal({
       }}
     >
       <div
-        className={`flex w-full ${MODAL_WIDTHS[size]} max-h-[92vh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl ring-1 ring-stone-900/5 sm:max-h-[86vh] sm:rounded-2xl animate-rise`}
+        className={`flex w-full ${MODAL_WIDTHS[size]} max-h-[92dvh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl ring-1 ring-stone-900/5 sm:max-h-[86dvh] sm:rounded-2xl animate-rise`}
+        style={vvh ? { maxHeight: vvh } : undefined}
       >
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-100 px-6 py-4">
           <div className="min-w-0">

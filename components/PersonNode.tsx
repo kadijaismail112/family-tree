@@ -125,7 +125,7 @@ function PersonNodeInner({ data, selected }: NodeProps<PersonNodeData>) {
           }}
           title="Add a relative here"
           aria-label="Add a relative here"
-          className={`absolute -bottom-3 -right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-teal-800 text-white shadow-md transition hover:bg-teal-700 group-hover/node:opacity-100 sm:-bottom-2.5 sm:-right-2.5 sm:h-6 sm:w-6 ${
+          className={`absolute -bottom-2.5 -right-2.5 z-10 hidden h-6 w-6 items-center justify-center rounded-full bg-teal-800 text-white shadow-md transition hover:bg-teal-700 group-hover/node:opacity-100 sm:flex ${
             data.quickAddVisible ? "opacity-100" : "opacity-0"
           }`}
         >

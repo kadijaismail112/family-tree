@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import { useStore } from "@/lib/store";
 import {
   editFieldLabel,
@@ -71,6 +71,16 @@ export function DetailPanel({
   onCompare: (personId: string) => void;
 }) {
   const { state } = useStore();
+  const swipeStartY = useRef<number | null>(null);
+  const onSheetTouchStart = (e: TouchEvent) => {
+    swipeStartY.current = e.touches[0].clientY;
+  };
+  const onSheetTouchEnd = (e: TouchEvent) => {
+    if (swipeStartY.current == null) return;
+    const dy = e.changedTouches[0].clientY - swipeStartY.current;
+    swipeStartY.current = null;
+    if (dy > 72) onClose();
+  };
 
   const person =
     selection.kind === "person"
@@ -84,26 +94,33 @@ export function DetailPanel({
   if (!person && !relationship) return null;
 
   return (
-    <aside className="animate-slide-in pointer-events-auto flex max-h-full w-full flex-col overflow-hidden rounded-t-2xl border border-stone-200/80 bg-white shadow-xl shadow-stone-900/10 sm:w-[340px] sm:rounded-2xl">
-      {/* grab handle, so the sheet reads as draggable-to-dismiss on a phone */}
-      <div className="flex justify-center pt-2 sm:hidden">
-        <span className="h-1 w-10 rounded-full bg-stone-200" />
+    <aside className="pointer-events-auto flex h-full min-h-0 w-full flex-col overflow-hidden rounded-t-2xl border border-stone-200/80 bg-white shadow-xl shadow-stone-900/10 sm:w-[340px] sm:rounded-2xl sm:animate-slide-in">
+      <div
+        className="flex justify-center pt-2 sm:hidden"
+        onTouchStart={onSheetTouchStart}
+        onTouchEnd={onSheetTouchEnd}
+      >
+        <span className="h-1 w-10 rounded-full bg-stone-300" />
       </div>
-      <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3">
+      <div
+        className="flex items-center justify-between border-b border-stone-100 px-5 py-3"
+        onTouchStart={onSheetTouchStart}
+        onTouchEnd={onSheetTouchEnd}
+      >
         <span className="text-xs font-semibold uppercase tracking-wider text-stone-400">
           {person ? "Person" : "Connection"}
         </span>
         <button
           onClick={onClose}
           aria-label="Close panel"
-          className="rounded-lg p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+          className="rounded-lg p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 sm:p-1 sm:text-stone-400"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y">
         {person && (
           <PersonDetail
             person={person}
