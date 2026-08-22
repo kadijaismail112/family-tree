@@ -73,15 +73,23 @@ export default function DashboardPage() {
           <Link href="/" aria-label="Dynasty home">
             <Wordmark />
           </Link>
-          <button
-            onClick={async () => {
-              await signOut();
-              router.replace("/");
-            }}
-            className="text-xs font-medium text-stone-400 transition hover:text-stone-600"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/settings"
+              className="text-xs font-medium text-stone-500 transition hover:text-stone-800"
+            >
+              Settings
+            </Link>
+            <button
+              onClick={async () => {
+                await signOut();
+                router.replace("/");
+              }}
+              className="text-xs font-medium text-stone-400 transition hover:text-stone-600"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

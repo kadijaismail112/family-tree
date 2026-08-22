@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRIVACY_VERSION, formatVersion } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -6,7 +7,8 @@ export const metadata: Metadata = {
     "What Dynasty stores, who can see it, and how to get it back or have it removed.",
 };
 
-const LAST_UPDATED = "20 August 2026";
+// One source of truth with what gets recorded as consent.
+const LAST_UPDATED = formatVersion(PRIVACY_VERSION);
 
 export default function PrivacyPage() {
   return (

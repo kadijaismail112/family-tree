@@ -8,6 +8,7 @@ import { Field, inputCls, PrimaryButton } from "@/components/ui";
 import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/safeNext";
+import { CURRENT_CONSENT } from "@/lib/legal";
 
 function SignupForm() {
   const router = useRouter();
@@ -45,7 +46,18 @@ function SignupForm() {
       password,
       options: {
         emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        data: { display_name: name.trim() },
+        // The checkbox gates the button; this is what makes the answer
+        // durable. handle_new_user() turns the flag into a server-clock
+        // timestamp on the profile, so there is an actual record that this
+        // person agreed, rather than only a control that was disabled.
+        data: {
+          display_name: name.trim(),
+          terms_accepted: true,
+          // Recorded against the exact versions this form linked to, so the
+          // consent survives a later revision of either document.
+          terms_version: CURRENT_CONSENT.terms,
+          privacy_version: CURRENT_CONSENT.privacy,
+        },
         captchaToken: captcha,
       },
     });
@@ -116,7 +128,13 @@ function SignupForm() {
         {/* Consent is its own step rather than fine print under the button:
             these trees hold other people's information, so the terms are
             something to read, not something to have implicitly agreed to. */}
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-stone-200 px-3.5 py-3 transition hover:border-stone-300">
+        <label
+          className={`flex cursor-pointer items-start gap-2.5 rounded-xl border-2 px-3.5 py-3 transition ${
+            accepted
+              ? "border-teal-700/40 bg-teal-800/5"
+              : "border-amber-300 bg-amber-50/60 hover:border-amber-400"
+          }`}
+        >
           <input
             type="checkbox"
             checked={accepted}
@@ -158,6 +176,14 @@ function SignupForm() {
         >
           {busy ? "Creating account…" : "Create account"}
         </PrimaryButton>
+        {/* The form is long enough that the checkbox can sit below the fold on
+            a laptop, leaving the button looking broken for no visible reason.
+            Say which box is missing rather than letting them hunt. */}
+        {!accepted && (name.trim() || email || password) && (
+          <p className="text-center text-[12px] text-amber-700">
+            Accept the Terms and Privacy Policy above to create your account.
+          </p>
+        )}
         <p className="text-center text-sm text-stone-500">
           Already have an account?{" "}
           <Link

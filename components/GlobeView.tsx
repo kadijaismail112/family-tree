@@ -10,6 +10,9 @@ import { groupByCity, type City, type CityGroup } from "@/lib/geo";
 import { loadGazetteer, resolvePlace } from "@/lib/gazetteer";
 import { Avatar } from "./ui";
 
+/** Every city dot is this size. See the note where the dots are drawn. */
+const CITY_DOT_RADIUS = 5;
+
 // world-atlas ships TopoJSON; unpack it once at module scope
 const land = feature(
   landTopo as never,
@@ -28,6 +31,9 @@ export function GlobeView({
   const [rotation, setRotation] = useState<[number, number]>([-20, -15]);
   const [zoom, setZoom] = useState(1);
   const [active, setActive] = useState<CityGroup | null>(null);
+  // Which dot the pointer is over, so its name can be shown alone rather than
+  // every name being drawn at once.
+  const [hovered, setHovered] = useState<string | null>(null);
   const [spinning, setSpinning] = useState(true);
   const drag = useRef<{ x: number; y: number; rot: [number, number] } | null>(null);
 
@@ -117,8 +123,6 @@ export function GlobeView({
     setRotation([-g.city.lon, -g.city.lat]);
   };
 
-  const maxCount = Math.max(1, ...groups.map((g) => g.people.length));
-
   return (
     <div className="flex h-full w-full">
       {/* Globe */}
@@ -167,13 +171,20 @@ export function GlobeView({
             const pt = projection([g.city.lon, g.city.lat]);
             if (!pt) return null;
             const isActive = active?.city.name === g.city.name;
-            const r = 4 + (g.people.length / maxCount) * 7;
+            const isHovered = hovered === g.city.name;
+            // Every city is the same dot. Scaling by headcount made the dense
+            // ones swallow their neighbours, and the sizes were being read as
+            // importance rather than counts — which the list beside the globe
+            // already states exactly.
+            const r = CITY_DOT_RADIUS;
             return (
               <g
                 key={g.city.name}
                 transform={`translate(${pt[0]},${pt[1]})`}
                 className="cursor-pointer"
                 onPointerDown={(e) => e.stopPropagation()}
+                onPointerEnter={() => setHovered(g.city.name)}
+                onPointerLeave={() => setHovered((h) => (h === g.city.name ? null : h))}
                 onClick={() => spinTo(g)}
               >
                 <circle r={r + 5} fill="#0f766e" opacity={isActive ? 0.22 : 0.1} />
@@ -183,14 +194,22 @@ export function GlobeView({
                   stroke="#ffffff"
                   strokeWidth={1.6}
                 />
-                <text
-                  y={-r - 7}
-                  textAnchor="middle"
-                  className="pointer-events-none fill-stone-700 font-semibold"
-                  style={{ fontSize: 11, paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}
-                >
-                  {g.city.name}
-                </text>
+                {/* Names only on demand. Printed on every dot at once they
+                    overlapped into an unreadable mat over any populated
+                    region. Selection counts as well as hover, so a tap still
+                    names the city on a touch screen, where hover doesn't
+                    exist — and only one dot is ever selected, so it can't
+                    bring the clutter back. */}
+                {(isHovered || isActive) && (
+                  <text
+                    y={-r - 7}
+                    textAnchor="middle"
+                    className="pointer-events-none fill-stone-700 font-semibold"
+                    style={{ fontSize: 11, paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}
+                  >
+                    {g.city.name}
+                  </text>
+                )}
               </g>
             );
           })}

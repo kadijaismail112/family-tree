@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TERMS_VERSION, formatVersion } from "@/lib/legal";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -6,7 +7,8 @@ export const metadata: Metadata = {
   description: "The agreement between you and Dynasty.",
 };
 
-const LAST_UPDATED = "20 August 2026";
+// One source of truth with what gets recorded as consent.
+const LAST_UPDATED = formatVersion(TERMS_VERSION);
 
 export default function TermsPage() {
   return (

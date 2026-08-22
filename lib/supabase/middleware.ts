@@ -12,6 +12,7 @@ function isProtected(path: string) {
   return (
     path.startsWith("/dashboard") ||
     path.startsWith("/family") ||
+    path.startsWith("/settings") ||
     path.startsWith("/auth/update-password")
   );
 }

@@ -14,6 +14,7 @@ import {
   type ViewMode,
 } from "@/components/TreeCanvas";
 import { DetailPanel } from "@/components/DetailPanel";
+import { BetaGate } from "@/components/BetaGate";
 import { AddMemberModal } from "@/components/AddMemberModal";
 import { AddChildrenModal } from "@/components/AddChildrenModal";
 import { ConnectModal } from "@/components/ConnectModal";
@@ -109,6 +110,11 @@ export default function FamilyPage() {
   const members = useMemo(
     () => state.memberships.filter((m) => m.familyId === familyId),
     [state.memberships, familyId]
+  );
+  // The stack shows everyone else; you are the account button next to it.
+  const others = useMemo(
+    () => members.filter((m) => m.userId !== currentUser?.id),
+    [members, currentUser?.id]
   );
   const disputedCount = useMemo(() => {
     const relIds = new Set(
@@ -323,23 +329,38 @@ export default function FamilyPage() {
             </svg>
           </button>
 
-          <button
-            onClick={() => setMembersOpen(true)}
-            className="hidden items-center -space-x-1.5 sm:flex"
-            title="Family members"
+          {/* Other members only. Your own face belongs to the account button
+              beside this, and showing it in both places made the stack read as
+              "you" — which is why pressing it opened a members list nobody
+              asked for. */}
+          {others.length > 0 && (
+            <button
+              onClick={() => setMembersOpen(true)}
+              className="hidden items-center -space-x-1.5 sm:flex"
+              title="Family members"
+            >
+              {others.slice(0, 4).map((m) => {
+                const u = state.users.find((u) => u.id === m.userId);
+                return u ? (
+                  <Avatar key={m.id} name={u.name} id={u.id} size={28} className="ring-2 ring-white" />
+                ) : null;
+              })}
+              {others.length > 4 && (
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-100 text-[10px] font-semibold text-stone-500 ring-2 ring-white">
+                  +{others.length - 4}
+                </span>
+              )}
+            </button>
+          )}
+
+          <Link
+            href="/settings"
+            title="Your account"
+            aria-label="Your account settings"
+            className="hidden rounded-full ring-2 ring-white transition hover:ring-teal-700/30 sm:block"
           >
-            {members.slice(0, 4).map((m) => {
-              const u = state.users.find((u) => u.id === m.userId);
-              return u ? (
-                <Avatar key={m.id} name={u.name} id={u.id} size={28} className="ring-2 ring-white" />
-              ) : null;
-            })}
-            {members.length > 4 && (
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-100 text-[10px] font-semibold text-stone-500 ring-2 ring-white">
-                +{members.length - 4}
-              </span>
-            )}
-          </button>
+            <Avatar name={currentUser.name} id={currentUser.id} size={28} />
+          </Link>
 
           {suggestionCount > 0 && (
             <button
@@ -554,6 +575,23 @@ export default function FamilyPage() {
               Show all
             </button>
           </div>
+        )}
+
+        {/* Shown on every visit, not once: this warns that what's on screen
+            may be wrong, and that stays true however many times you've seen it. */}
+        {viewMode === "clusters" && (
+          <BetaGate title="Clusters is in beta">
+            <p>
+              This view regroups your family by city, school, work or decade
+              born. It works, but it&apos;s the newest part of Dynasty and the
+              grouping can be rough around the edges — especially where details
+              are only half filled in.
+            </p>
+            <p className="mt-2">
+              Nothing here changes your tree. It&apos;s a different way of
+              looking at the same people.
+            </p>
+          </BetaGate>
         )}
 
         {/* Cluster-by picker */}
