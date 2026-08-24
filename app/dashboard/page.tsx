@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { computeProfile } from "@/lib/profile";
 import { timeAgo } from "@/lib/helpers";
+import { weeklySpotlight } from "@/lib/spotlight";
+import { RelativesCarousel } from "@/components/RelativesCarousel";
 import {
   Avatar,
   Field,
@@ -32,6 +34,10 @@ export default function DashboardPage() {
 
   const profile = useMemo(
     () => (currentUser ? computeProfile(state, currentUser.id) : null),
+    [state, currentUser]
+  );
+  const spotlight = useMemo(
+    () => (currentUser ? weeklySpotlight(state, currentUser.id, 4) : []),
     [state, currentUser]
   );
 
@@ -63,8 +69,7 @@ export default function DashboardPage() {
 
 
   const close = profile.closeCounts;
-  const hasAnyStats =
-    profile.totalRelatives > 0 || profile.families.some((f) => f.selfPersonId);
+  const hasClaimed = profile.families.some((f) => f.selfPersonId);
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -117,15 +122,20 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {!hasAnyStats && (
-          <p className="mt-8 rounded-2xl border border-dashed border-stone-200 px-5 py-6 text-center text-sm leading-relaxed text-stone-500">
-            Your stats appear once you&apos;re placed in a tree. Open a family and
-            claim your own node to see how everyone connects back to you.
+        {!hasClaimed && profile.families.length > 0 && (
+          <p className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-amber-50/60 px-5 py-5 text-sm leading-relaxed text-amber-950">
+            Open a tree and mark <strong className="font-semibold">This is me</strong>{" "}
+            on your node. Until then the tree can&apos;t say how anyone is related
+            to you, and these numbers stay put.
           </p>
         )}
 
-        {/* ── Headline stats ── */}
-        {hasAnyStats && (
+        {spotlight.length > 0 && (
+          <RelativesCarousel cards={spotlight} claimed={hasClaimed} />
+        )}
+
+        {/* ── Headline stats — only after a claim, so day one is trees, not empty charts ── */}
+        {hasClaimed && (
           <>
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Stat
@@ -261,8 +271,8 @@ export default function DashboardPage() {
                   {members.length} {members.length === 1 ? "member" : "members"}
                 </p>
                 {!f.selfPersonId && (
-                  <p className="mt-2 inline-block rounded-full bg-amber-600/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                    You&apos;re not in this tree yet
+                  <p className="mt-2 text-sm font-medium text-amber-800">
+                    You&apos;re not in this tree yet — open it and tap This is me
                   </p>
                 )}
                 <div className="mt-5 flex items-center justify-between">

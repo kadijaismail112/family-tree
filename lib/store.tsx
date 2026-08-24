@@ -26,6 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { EMPTY_STORE, loadStore } from "@/lib/supabase/load";
 import { GALLERY_PHOTOS_ENABLED } from "./features";
 import {
+  detailsPayload,
   emptyToNull,
   friendlyError,
   mapComment,
@@ -118,6 +119,7 @@ interface StoreApi {
   removeMember: (familyId: string, userId: string) => Promise<void>;
   claimPerson: (personId: string) => Promise<void>;
   unclaimPerson: (personId: string) => Promise<void>;
+  setPersonLineage: (personId: string, lineage: Person["lineage"] | null) => Promise<void>;
 
   setReaction: (relationshipId: string, type: ConfirmationType) => Promise<void>;
   setPersonDetail: (
@@ -799,6 +801,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [userId]
   );
 
+  const setPersonLineage = useCallback(
+    async (personId: string, lineage: Person["lineage"] | null) => {
+      const person = requirePerson(state.people, personId);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("people")
+        .update({ details: detailsPayload(person.details, lineage) })
+        .eq("id", personId)
+        .select()
+        .single();
+      if (error) throw new Error(friendlyError(error.message));
+      if (!data) throw new Error(STALE_VIEW);
+      setState((s) => ({
+        ...s,
+        people: upsert(s.people, personFromRow(data, person)),
+      }));
+    },
+    [state.people]
+  );
+
   const deleteRelationship = useCallback(
     async (relationshipId: string) => {
       const supabase = createClient();
@@ -875,7 +897,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("people")
-        .update({ details })
+        .update({ details: detailsPayload(details, person.lineage) })
         .eq("id", personId)
         .select()
         .single();
@@ -1127,6 +1149,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     removeMember,
     claimPerson,
     unclaimPerson,
+    setPersonLineage,
     setReaction,
     setPersonDetail,
     setPersonVoice,

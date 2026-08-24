@@ -19,9 +19,9 @@ import {
   type RelationType,
 } from "@/lib/types";
 import { suggestionsFor } from "@/lib/suggestions";
-import { computeKinship } from "@/lib/kinship";
+import { computeKinship, inferredLineage, isMarriedIn } from "@/lib/kinship";
 import { describeRelationship } from "@/lib/relationship";
-import type { Person, Relationship } from "@/lib/types";
+import type { Lineage, Person, Relationship } from "@/lib/types";
 import {
   Avatar,
   Collapsible,
@@ -197,6 +197,7 @@ function PersonDetail({
     setPersonPhoto,
     claimPerson,
     unclaimPerson,
+    setPersonLineage,
   } = useStore();
   const toast = useToast();
   const { run, pending } = useAction();
@@ -251,11 +252,12 @@ function PersonDetail({
     [state.relationships, person.familyId]
   );
 
-  const marriedIn = useMemo(
-    () =>
-      !computeKinship(familyPeople, familyRels, currentUser?.id).bloodIds.has(person.id),
-    [familyPeople, familyRels, person.id, currentUser?.id]
+  const bloodIds = useMemo(
+    () => computeKinship(familyPeople, familyRels, currentUser?.id).bloodIds,
+    [familyPeople, familyRels, currentUser?.id]
   );
+  const marriedIn = isMarriedIn(person, bloodIds);
+  const guessedLineage = inferredLineage(person, bloodIds);
 
   /**
    * Drawing the line between you and someone was only half an answer — it
@@ -391,45 +393,26 @@ function PersonDetail({
           </div>
 
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {marriedIn ? (
-              <Chip tone="amber">Married in</Chip>
-            ) : (
-              <Chip tone="teal">Blood relative</Chip>
-            )}
             {person.lifeStatus === "living" && <Chip tone="teal">Living</Chip>}
             {person.lifeStatus === "deceased" && <Chip tone="stone">Deceased</Chip>}
             {!person.lifeStatus && <Chip tone="stone">Status unknown</Chip>}
-            {/* Claiming is a toggle: a mis-tap has to be undoable. */}
+            {isYou && <Chip tone="teal">This is you</Chip>}
+            {claimed && !isYou && <Chip tone="teal">Has an account</Chip>}
             {isYou && (
               <button
                 type="button"
                 disabled={pending}
-                title="Release this node — it will no longer be marked as you"
                 onClick={() =>
                   void run(() => unclaimPerson(person.id), {
                     success: "No longer marked as you",
                     failure: "Couldn't release that",
                   })
                 }
-                className="group flex items-center gap-1 rounded-full bg-teal-800/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-800 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400 transition hover:bg-stone-100 hover:text-stone-600 disabled:opacity-50"
               >
-                <span className="group-hover:hidden">This is you</span>
-                <span className="hidden group-hover:inline">Not you?</span>
-                <svg
-                  width="9"
-                  height="9"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3.5"
-                  strokeLinecap="round"
-                  className="opacity-50 transition group-hover:opacity-100"
-                >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
+                Not you
               </button>
             )}
-            {claimed && !isYou && <Chip tone="teal">Has an account</Chip>}
             {!claimed && (
               <button
                 type="button"
@@ -445,6 +428,26 @@ function PersonDetail({
               </button>
             )}
           </div>
+
+          {!isYou && (
+            <LineageControl
+              marriedIn={marriedIn}
+              confirmed={!!person.lineage}
+              guessed={guessedLineage}
+              pending={pending}
+              onChoose={(next) =>
+                void run(() => setPersonLineage(person.id, next), {
+                  success:
+                    next == null
+                      ? "Using what the tree says"
+                      : next === "married_in"
+                        ? "Marked as married in"
+                        : "Marked as your blood",
+                  failure: "Couldn't save that",
+                })
+              }
+            />
+          )}
 
           {person.notes && (
             <p className="mt-4 rounded-xl bg-stone-50 px-3.5 py-3 text-sm leading-relaxed text-stone-600">
@@ -1423,6 +1426,71 @@ function PersonLink({ name, onClick }: { name?: string; onClick: () => void }) {
     >
       {name ?? "Unknown"}
     </button>
+  );
+}
+
+function LineageControl({
+  marriedIn,
+  confirmed,
+  guessed,
+  pending,
+  onChoose,
+}: {
+  marriedIn: boolean;
+  confirmed: boolean;
+  guessed: Lineage;
+  pending: boolean;
+  onChoose: (next: Lineage | null) => void;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50/70 px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+        How they joined your line
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onChoose("blood")}
+          className={`rounded-lg px-2 py-2 text-xs font-semibold transition disabled:opacity-50 ${
+            !marriedIn
+              ? "bg-teal-800 text-white"
+              : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-100"
+          }`}
+        >
+          Your blood
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onChoose("married_in")}
+          className={`rounded-lg px-2 py-2 text-xs font-semibold transition disabled:opacity-50 ${
+            marriedIn
+              ? "bg-amber-700 text-white"
+              : "bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-100"
+          }`}
+        >
+          Married in
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
+        {confirmed
+          ? "Confirmed by the family. The tree colour follows this."
+          : guessed === "married_in"
+            ? "Guessed from the connections — confirm Married in, or switch if they’re your blood."
+            : "Guessed from the connections — confirm Your blood, or mark them married in."}
+      </p>
+      {confirmed && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onChoose(null)}
+          className="mt-1 text-[11px] font-medium text-teal-800 hover:underline disabled:opacity-50"
+        >
+          Let the tree decide again
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNextUrl } from "@/lib/safeNext";
 import { supabaseEnv } from "./env";
 
 const AUTH_PAGES = new Set(["/login", "/signup", "/forgot-password"]);
@@ -55,9 +56,20 @@ export async function updateSession(request: NextRequest) {
     }
 
     if (user && AUTH_PAGES.has(path)) {
+      // A signed-in relative who opens login?next=/invite/… used to be dumped
+      // on the dashboard and lose the invitation. Honour a safe next, and
+      // never bounce them back onto another auth page.
+      const { pathname, search } = safeNextUrl(
+        request.nextUrl.searchParams.get("next")
+      );
       const dest = request.nextUrl.clone();
-      dest.pathname = "/dashboard";
-      dest.search = "";
+      if (AUTH_PAGES.has(pathname)) {
+        dest.pathname = "/dashboard";
+        dest.search = "";
+      } else {
+        dest.pathname = pathname;
+        dest.search = search;
+      }
       return NextResponse.redirect(dest);
     }
 

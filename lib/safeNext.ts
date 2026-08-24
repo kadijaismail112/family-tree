@@ -26,3 +26,14 @@ export function safeNext(raw: string | null | undefined, fallback = "/dashboard"
 
   return raw;
 }
+
+/** Split a validated next path so middleware can assign pathname + search. */
+export function safeNextUrl(
+  raw: string | null | undefined,
+  fallback = "/dashboard"
+): { pathname: string; search: string } {
+  const next = safeNext(raw, fallback);
+  const q = next.indexOf("?");
+  if (q === -1) return { pathname: next, search: "" };
+  return { pathname: next.slice(0, q), search: next.slice(q) };
+}

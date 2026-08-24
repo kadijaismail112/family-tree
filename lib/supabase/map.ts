@@ -9,6 +9,7 @@ import type {
   Gender,
   Invite,
   LifeStatus,
+  Lineage,
   Membership,
   Person,
   PersonComment,
@@ -104,8 +105,29 @@ function asDetails(value: Json): Person["details"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Partial<Record<DetailKey, string>> = {};
   for (const [k, v] of Object.entries(value)) {
+    // Reserved keys (lineage override) stay off the "Add info" list.
+    if (k.startsWith("_")) continue;
     if (typeof v === "string") out[k as DetailKey] = v;
   }
+  return out;
+}
+
+function lineageFromDetails(value: Json): Lineage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const v = (value as Record<string, unknown>)._lineage;
+  return v === "blood" || v === "married_in" ? v : undefined;
+}
+
+/** Writes public detail fields plus the reserved lineage override. */
+export function detailsPayload(
+  details: Person["details"],
+  lineage?: Lineage | null
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(details ?? {})) {
+    if (v) out[k] = v;
+  }
+  if (lineage === "blood" || lineage === "married_in") out._lineage = lineage;
   return out;
 }
 
@@ -126,6 +148,7 @@ export function mapPerson(
     photoUrl: row.photo_path ? urls.get(row.photo_path) : undefined,
     notes: row.notes ?? undefined,
     details: asDetails(row.details),
+    lineage: lineageFromDetails(row.details),
     voiceNameUrl: row.voice_name_path
       ? urls.get(row.voice_name_path)
       : undefined,

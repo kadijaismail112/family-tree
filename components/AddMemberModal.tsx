@@ -34,7 +34,7 @@ export function AddMemberModal({
   onAdded?: (personId: string) => void;
   mePersonId?: string | null;
 }) {
-  const { state, addPerson } = useStore();
+  const { state, addPerson, claimPerson } = useStore();
   const toast = useToast();
   const { run, pending } = useAction();
 
@@ -46,6 +46,7 @@ export function AddMemberModal({
   const [anchorId, setAnchorId] = useState<string>("");
   const [gender, setGender] = useState<Gender | "">("");
   const [secondParentId, setSecondParentId] = useState<string>("");
+  const [thisIsMe, setThisIsMe] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -56,8 +57,10 @@ export function AddMemberModal({
       setKind("child");
       setGender("");
       setAnchorId(anchorPersonId ?? people[0]?.id ?? "");
+      // First person in an empty tree is usually the member themselves.
+      setThisIsMe(!mePersonId && people.length === 0);
     }
-  }, [open, anchorPersonId, people]);
+  }, [open, anchorPersonId, people, mePersonId]);
 
   // default the second parent to the anchor's spouse whenever the anchor
   // changes while adding a child
@@ -101,7 +104,19 @@ export function AddMemberModal({
       });
       // Only reached when the person and their connection both landed, so a
       // half-finished add leaves the form open with the reason on screen.
-      toast(`Added ${person.name} to the tree`);
+      if (thisIsMe && !mePersonId) {
+        try {
+          await claimPerson(person.id);
+          toast(`${person.name} is you — the tree now reads from your place`);
+        } catch (err) {
+          toast(
+            err instanceof Error ? err.message : "Added, but couldn't mark them as you",
+            "error"
+          );
+        }
+      } else {
+        toast(`Added ${person.name} to the tree`);
+      }
       onAdded?.(person.id);
       onClose();
     }, { failure: "Couldn't add that person" });
@@ -111,7 +126,11 @@ export function AddMemberModal({
       open={open}
       onClose={onClose}
       title="Add a family member"
-      subtitle="They don't need an account — you're adding their place in the tree."
+      subtitle={
+        people.length === 0
+          ? "Every tree starts with one person. If this is you, leave that marked."
+          : "They don't need an account — you're adding their place in the tree."
+      }
       size="lg"
     >
       <form
@@ -242,6 +261,25 @@ export function AddMemberModal({
             onChange={(e) => setNotes(e.target.value)}
           />
         </Field>
+
+        {!mePersonId && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-teal-700/25 bg-teal-800/5 px-3.5 py-3">
+            <input
+              type="checkbox"
+              checked={thisIsMe}
+              onChange={(e) => setThisIsMe(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-teal-800"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-teal-900">
+                This is me
+              </span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-stone-500">
+                Claim this node so the tree can say how everyone relates to you.
+              </span>
+            </span>
+          </label>
+        )}
 
         <div className="flex justify-end gap-2.5 pt-1">
           <GhostButton type="button" onClick={onClose}>

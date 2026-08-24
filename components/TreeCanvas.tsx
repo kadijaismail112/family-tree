@@ -18,7 +18,7 @@ import { layoutTree, NODE_H, NODE_W } from "@/lib/layout";
 import { layoutClusters, type ClusterKey } from "@/lib/cluster";
 import { layoutIsolated } from "@/lib/isolate";
 import { personMatches, tallyFor, userName } from "@/lib/helpers";
-import { computeKinship } from "@/lib/kinship";
+import { computeKinship, isMarriedIn } from "@/lib/kinship";
 import { allSuggestions } from "@/lib/suggestions";
 import {
   BLOOD_COLOR,
@@ -182,7 +182,7 @@ function CanvasInner({
           claimed: !!p.accountUserId,
           isYou: !!currentUser && p.accountUserId === currentUser.id,
           dimmed,
-          marriedIn: !kinship.bloodIds.has(p.id),
+          marriedIn: isMarriedIn(p, kinship.bloodIds),
           personId: p.id,
           photoUrl: p.photoUrl,
           onQuickAdd,

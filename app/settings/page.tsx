@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useStore } from "@/lib/store";
-import { Avatar, LoadingScreen } from "@/components/ui";
+import { Avatar, LoadingScreen, Wordmark } from "@/components/ui";
 
 /**
  * Account settings.
@@ -38,8 +38,8 @@ export default function SettingsPage() {
     <main className="min-h-screen bg-stone-50">
       <header className="border-b border-stone-200/70 bg-white">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
-          <Link href="/dashboard" className="font-display text-lg font-semibold text-stone-900">
-            Dynasty
+          <Link href="/dashboard" aria-label="Dynasty home">
+            <Wordmark />
           </Link>
           <Link
             href="/dashboard"

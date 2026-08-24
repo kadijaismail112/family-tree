@@ -51,6 +51,12 @@ export type Gender = "female" | "male" | "other";
 /** Explicit, because "no death date" and "still alive" are not the same. */
 export type LifeStatus = "living" | "deceased";
 
+/**
+ * Family-confirmed answer to "did they marry in, or are they blood?"
+ * Unset means the tree still decides from connections.
+ */
+export type Lineage = "blood" | "married_in";
+
 /** Who changed what, so the provenance trail survives editing. */
 export interface EditRecord {
   id: string;
@@ -177,6 +183,8 @@ export interface Person {
   photoUrl?: string;
   notes?: string;
   details?: Partial<Record<DetailKey, string>>;
+  /** When set, node colour and the sheet chip follow this instead of kinship. */
+  lineage?: Lineage;
   voiceNameUrl?: string; // recorded pronunciation of their name
   accountUserId?: string; // set when this person has claimed their node
   addedById: string; // provenance — never editable

@@ -1,4 +1,4 @@
-import type { Person, Relationship } from "./types";
+import type { Lineage, Person, Relationship } from "./types";
 import { isLineageKind } from "./types";
 
 /**
@@ -103,4 +103,19 @@ export function computeKinship(
   }
 
   return { bloodIds, referenceId };
+}
+
+/**
+ * Viewer-relative by default, overridable when the family says the guess is
+ * wrong. A confirmed "married in" stays amber even if the graph later grows
+ * a blood path; clearing the override lets the tree decide again.
+ */
+export function isMarriedIn(person: Person, bloodIds: Set<string>): boolean {
+  if (person.lineage === "married_in") return true;
+  if (person.lineage === "blood") return false;
+  return !bloodIds.has(person.id);
+}
+
+export function inferredLineage(person: Person, bloodIds: Set<string>): Lineage {
+  return bloodIds.has(person.id) ? "blood" : "married_in";
 }

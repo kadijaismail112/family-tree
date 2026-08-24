@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Wordmark } from "@/components/ui";
 
 const features = [
   {
@@ -40,7 +41,7 @@ export default function LandingPage() {
     <main className="min-h-screen bg-stone-50">
       {/* Nav */}
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-        <Logo />
+        <Wordmark />
         <div className="flex items-center gap-3">
           {/* Two doors, and the wording says which is which: "Sign up" for
               people who don't have an account yet, "Open your trees" for
@@ -115,7 +116,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-3 px-6 py-10 text-sm text-stone-400">
-        <Logo muted />
+        <Wordmark muted />
         <Link href="/legal/privacy" className="transition hover:text-stone-700">
           Privacy
         </Link>
@@ -125,20 +126,6 @@ export default function LandingPage() {
         <span className="ml-auto">Your tree is private to your family.</span>
       </footer>
     </main>
-  );
-}
-
-function Logo({ muted = false }: { muted?: boolean }) {
-  return (
-    <span className={`font-display inline-flex items-center gap-2 text-lg font-semibold ${muted ? "text-stone-400" : "text-stone-900"}`}>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={muted ? "#a8a29e" : "#115e59"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="5" r="2.4" />
-        <circle cx="5.5" cy="18" r="2.4" />
-        <circle cx="18.5" cy="18" r="2.4" />
-        <path d="M12 7.4V12m0 0l-5 3.8M12 12l5 3.8" />
-      </svg>
-      Dynasty
-    </span>
   );
 }
 
