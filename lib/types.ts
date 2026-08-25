@@ -136,6 +136,7 @@ export type DetailKey =
   | "travelPlans"
   | "college"
   | "jobs"
+  | "clusterGroup"
   | "linkedin"
   | "facebook"
   | "instagram"
@@ -160,6 +161,7 @@ export const PERSON_DETAIL_FIELDS: DetailFieldDef[] = [
   { key: "travelPlans", label: "Upcoming travel plans", kind: "textarea", placeholder: "Visiting the cousins in August…" },
   { key: "college", label: "College", kind: "text", placeholder: "School & years" },
   { key: "jobs", label: "Jobs", kind: "textarea", placeholder: "What they do / did" },
+  { key: "clusterGroup", label: "Cluster", kind: "text", placeholder: "A named group in this family" },
   { key: "linkedin", label: "LinkedIn", kind: "url", placeholder: "https://linkedin.com/in/…" },
   { key: "facebook", label: "Facebook", kind: "url", placeholder: "https://facebook.com/…" },
   { key: "instagram", label: "Instagram", kind: "url", placeholder: "https://instagram.com/…" },

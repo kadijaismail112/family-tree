@@ -7,7 +7,7 @@ import { useStore } from "@/lib/store";
 import { findPath, personMatch, personMatches, timeAgo } from "@/lib/helpers";
 import { useNarrow } from "@/lib/useNarrow";
 import { allSuggestions } from "@/lib/suggestions";
-import { CLUSTER_OPTIONS, type ClusterKey } from "@/lib/cluster";
+import { CLUSTER_OPTIONS, isAssignedToCluster, isWritableClusterKey, type ClusterKey } from "@/lib/cluster";
 import {
   TreeCanvas,
   type PathHighlight,
@@ -17,6 +17,7 @@ import {
 import { DetailPanel } from "@/components/DetailPanel";
 import { AddMemberModal } from "@/components/AddMemberModal";
 import { AddChildrenModal } from "@/components/AddChildrenModal";
+import { ClusterModal } from "@/components/ClusterModal";
 import { ConnectModal } from "@/components/ConnectModal";
 import { InvitePersonModal } from "@/components/InvitePersonModal";
 import { ReviewModal } from "@/components/ReviewModal";
@@ -98,6 +99,9 @@ export default function FamilyPage() {
   const { run } = useAction();
   const narrow = useNarrow();
   const [clustersHint, setClustersHint] = useState(true);
+  const [clusterModal, setClusterModal] = useState<
+    { mode: "create" } | { mode: "add"; label: string } | null
+  >(null);
 
   const family = state.families.find((f) => f.id === familyId);
   // the lightest possible moderation: whoever started the tree can remove members
@@ -553,6 +557,11 @@ export default function FamilyPage() {
               setAddAnchorId(id);
               setAddOpen(true);
             }}
+            onClusterAdd={
+              isWritableClusterKey(clusterKey)
+                ? (label) => setClusterModal({ mode: "add", label })
+                : undefined
+            }
           />
         )}
 
@@ -638,7 +647,7 @@ export default function FamilyPage() {
 
         {/* Cluster-by picker */}
         {viewMode === "clusters" && (
-          <div className={`absolute left-3 z-10 flex items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-2.5 py-1.5 shadow-sm backdrop-blur sm:left-4 sm:px-3 sm:py-2 ${
+          <div className={`absolute left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-2.5 py-1.5 shadow-sm backdrop-blur sm:left-4 sm:px-3 sm:py-2 ${
               clustersHint ? "top-16 sm:top-20" : "top-3 sm:top-4"
             }`}>
             <span className="hidden text-xs font-semibold uppercase tracking-wider text-stone-400 sm:inline">
@@ -655,10 +664,41 @@ export default function FamilyPage() {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setClusterModal({ mode: "create" })}
+              className="shrink-0 rounded-lg bg-teal-800 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700"
+            >
+              Create cluster
+            </button>
           </div>
         )}
 
         {/* Empty state */}
+        {viewMode === "clusters" &&
+          people.length > 0 &&
+          people.every((p) => !isAssignedToCluster(p, clusterKey)) && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+              <div className="pointer-events-auto mx-6 max-w-sm rounded-2xl border border-stone-200 bg-white p-8 text-center shadow-xl">
+                <p className="font-display text-xl font-semibold text-stone-900">
+                  Nobody has a{" "}
+                  {CLUSTER_OPTIONS.find((o) => o.key === clusterKey)?.label.toLowerCase() ??
+                    "detail"}{" "}
+                  yet
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-stone-500">
+                  People without one stay off this view, so a missing detail
+                  cannot swallow the clusters that do have a place.
+                </p>
+                <PrimaryButton
+                  className="mt-5"
+                  onClick={() => setClusterModal({ mode: "create" })}
+                >
+                  Create a cluster
+                </PrimaryButton>
+              </div>
+            </div>
+          )}
         {people.length === 0 && viewMode !== "map" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center">
             <div className="animate-rise mx-6 max-w-sm rounded-2xl border border-stone-200 bg-white p-8 text-center shadow-xl">
@@ -796,6 +836,19 @@ export default function FamilyPage() {
         familyId={familyId}
         people={people}
         parentId={childrenParentId}
+        mePersonId={mePersonId}
+      />
+      <ClusterModal
+        open={!!clusterModal}
+        onClose={() => setClusterModal(null)}
+        onCreated={() => setClusterKey("clusterGroup")}
+        clusterKey={
+          clusterModal?.mode === "add" && isWritableClusterKey(clusterKey)
+            ? clusterKey
+            : "clusterGroup"
+        }
+        existingLabel={clusterModal?.mode === "add" ? clusterModal.label : null}
+        people={people}
         mePersonId={mePersonId}
       />
       <ConnectModal

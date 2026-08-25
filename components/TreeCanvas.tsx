@@ -57,6 +57,7 @@ export function TreeCanvas(props: {
   isolateId: string | null;
   rightInset: number;
   onQuickAdd: (personId: string) => void;
+  onClusterAdd?: (label: string) => void;
 }) {
   return (
     <ReactFlowProvider>
@@ -78,6 +79,7 @@ function CanvasInner({
   isolateId,
   rightInset,
   onQuickAdd,
+  onClusterAdd,
 }: {
   familyId: string;
   selection: Selection | null;
@@ -91,6 +93,7 @@ function CanvasInner({
   isolateId: string | null;
   rightInset: number;
   onQuickAdd: (personId: string) => void;
+  onClusterAdd?: (label: string) => void;
 }) {
   const { state, currentUser } = useStore();
   const { setCenter, fitView } = useReactFlow();
@@ -150,7 +153,14 @@ function CanvasInner({
         selectable: false,
         draggable: false,
         zIndex: -1,
-        data: { label: b.label, count: b.count, muted: b.muted, size: b.size },
+        data: {
+          label: b.label,
+          count: b.count,
+          muted: b.muted,
+          size: b.size,
+          interactive: !!onClusterAdd,
+          onAdd: onClusterAdd ? () => onClusterAdd(b.label) : undefined,
+        },
       })
     );
 
@@ -158,7 +168,9 @@ function CanvasInner({
     // ghosted cards keep drawing their lines across the stage
     const visible = isolation
       ? people.filter((p) => isolation.focusIds.has(p.id))
-      : people;
+      : clusterLayout
+        ? people.filter((p) => clusterLayout.positions.has(p.id))
+        : people;
 
     const personNodes: Node<PersonNodeData>[] = visible.map((p) => {
       const pos = positions.get(p.id);
@@ -204,6 +216,7 @@ function CanvasInner({
     isolation,
     kinship,
     onQuickAdd,
+    onClusterAdd,
     currentUser,
   ]);
 

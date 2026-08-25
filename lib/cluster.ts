@@ -1,9 +1,17 @@
-import type { Person } from "./types";
+import type { DetailKey, Person } from "./types";
 import { NODE_H, NODE_W } from "./layout";
 
-export type ClusterKey = "currentCity" | "birthCity" | "college" | "jobs" | "decade";
+export type ClusterKey =
+  | "clusterGroup"
+  | "currentCity"
+  | "birthCity"
+  | "college"
+  | "jobs"
+  | "decade";
+export type WritableClusterKey = Exclude<ClusterKey, "decade">;
 
 export const CLUSTER_OPTIONS: { key: ClusterKey; label: string }[] = [
+  { key: "clusterGroup", label: "Groups" },
   { key: "currentCity", label: "Current city" },
   { key: "birthCity", label: "Birth city" },
   { key: "college", label: "College" },
@@ -11,11 +19,19 @@ export const CLUSTER_OPTIONS: { key: ClusterKey; label: string }[] = [
   { key: "decade", label: "Decade born" },
 ];
 
+export function isWritableClusterKey(key: ClusterKey): key is WritableClusterKey {
+  return key !== "decade";
+}
+
+export function clusterOptionLabel(key: ClusterKey): string {
+  return CLUSTER_OPTIONS.find((o) => o.key === key)?.label ?? key;
+}
+
 export interface ClusterBubble {
   id: string;
   label: string;
   count: number;
-  muted: boolean; // the "no info" group
+  muted: boolean;
   x: number; // top-left
   y: number;
   size: number; // diameter
@@ -46,26 +62,56 @@ function displayLabel(value: string): string {
   return value.split(",")[0].trim();
 }
 
+export function isAssignedToCluster(person: Person, key: ClusterKey): boolean {
+  return !!valueFor(person, key);
+}
+
+export function peopleInCluster(
+  people: Person[],
+  key: ClusterKey,
+  label: string
+): Person[] {
+  const gk = groupKeyOf(label);
+  return people.filter((p) => {
+    const value = valueFor(p, key);
+    return !!value && groupKeyOf(value) === gk;
+  });
+}
+
+/** Prefer an existing stored value so "San Francisco, CA" stays intact. */
+export function canonicalClusterValue(
+  people: Person[],
+  key: ClusterKey,
+  label: string
+): string {
+  const gk = groupKeyOf(label);
+  for (const p of people) {
+    const value = valueFor(p, key);
+    if (value && groupKeyOf(value) === gk) return value;
+  }
+  return label.trim();
+}
+
+export function asDetailKey(key: WritableClusterKey): DetailKey {
+  return key;
+}
+
 export function layoutClusters(people: Person[], key: ClusterKey): ClusterLayout {
-  const groups = new Map<string, { label: string; people: Person[]; muted: boolean }>();
+  const groups = new Map<string, { label: string; people: Person[] }>();
 
   for (const person of people) {
     const value = valueFor(person, key);
-    const gk = value ? `v:${groupKeyOf(value)}` : "none";
+    if (!value) continue;
+    const gk = `v:${groupKeyOf(value)}`;
     if (!groups.has(gk)) {
-      groups.set(gk, {
-        label: value ? displayLabel(value) : "No info yet",
-        people: [],
-        muted: !value,
-      });
+      groups.set(gk, { label: displayLabel(value), people: [] });
     }
     groups.get(gk)!.people.push(person);
   }
 
-  const ordered = Array.from(groups.values()).sort((a, b) => {
-    if (a.muted !== b.muted) return a.muted ? 1 : -1; // "no info" last
-    return b.people.length - a.people.length;
-  });
+  const ordered = Array.from(groups.values()).sort(
+    (a, b) => b.people.length - a.people.length
+  );
 
   const bubbles: ClusterBubble[] = [];
   const positions = new Map<string, { x: number; y: number }>();
@@ -117,7 +163,7 @@ export function layoutClusters(people: Person[], key: ClusterKey): ClusterLayout
         id: `cluster-${g.label}-${bubbles.length}`,
         label: g.label,
         count: g.people.length,
-        muted: g.muted,
+        muted: false,
         x: cx,
         y: centerY - g.radius,
         size: d,

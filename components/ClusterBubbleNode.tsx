@@ -8,29 +8,35 @@ export interface ClusterBubbleData {
   count: number;
   muted: boolean;
   size: number;
+  interactive?: boolean;
+  onAdd?: () => void;
 }
 
 function ClusterBubbleInner({ data }: NodeProps<ClusterBubbleData>) {
   return (
     <div
-      className={`pointer-events-none relative rounded-full border-2 border-dashed ${
-        data.muted
-          ? "border-stone-200 bg-stone-100/40"
-          : "border-teal-700/25 bg-teal-800/[0.045]"
-      }`}
+      className="pointer-events-none relative rounded-full border-2 border-dashed border-teal-700/25 bg-teal-800/[0.045]"
       style={{ width: data.size, height: data.size }}
     >
       <span
-        className={`absolute left-1/2 top-6 -translate-x-1/2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-semibold shadow-sm ring-1 ${
-          data.muted
-            ? "bg-white text-stone-400 ring-stone-200"
-            : "bg-white text-teal-900 ring-teal-800/20"
+        className={`absolute left-1/2 top-6 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-1.5 text-sm font-semibold text-teal-900 shadow-sm ring-1 ring-teal-800/20 ${
+          data.interactive ? "pointer-events-auto" : ""
         }`}
       >
         {data.label}
-        <span className={`ml-1.5 ${data.muted ? "text-stone-300" : "text-teal-700/60"}`}>
-          {data.count}
-        </span>
+        <span className="text-teal-700/60">{data.count}</span>
+        {data.interactive && data.onAdd && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onAdd?.();
+            }}
+            className="ml-0.5 rounded-full bg-teal-800 px-2 py-0.5 text-[11px] font-semibold text-white transition hover:bg-teal-700"
+          >
+            Add
+          </button>
+        )}
       </span>
     </div>
   );
