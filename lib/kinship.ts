@@ -86,6 +86,7 @@ export function computeKinship(
   // Seed with the reference and their direct ancestors. Parents only count
   // upward from the reference — a parent of some other blood relative is
   // that relative's other parent, who married in.
+  inferCoParents(parents, relationships, children);
   const bloodIds = new Set<string>([referenceId]);
   walk([referenceId], parents).forEach((id) => bloodIds.add(id));
 
@@ -106,6 +107,65 @@ export function computeKinship(
   }
 
   return { bloodIds, referenceId };
+}
+
+/**
+ * A child recorded under only one parent still has the other, when that
+ * parent is married to someone who isn't marked step/foster. Trees grown
+ * from one side of the family often attach the other parent as a spouse
+ * and never write the second PARENT_OF — without this, the whole paternal
+ * (or maternal) line reads as married-in, and the missing parent is named
+ * a step-parent.
+ */
+export function inferCoParents(
+  parents: Map<string, string[]>,
+  relationships: Relationship[],
+  children?: Map<string, string[]>
+) {
+  const spouses = new Map<string, string[]>();
+  const step = new Set<string>();
+  const give = (m: Map<string, string[]>, k: string, v: string) => {
+    const list = m.get(k);
+    if (!list) m.set(k, [v]);
+    else if (!list.includes(v)) list.push(v);
+  };
+  for (const r of relationships) {
+    if (r.type === "SPOUSE_OF") {
+      give(spouses, r.fromPersonId, r.toPersonId);
+      give(spouses, r.toPersonId, r.fromPersonId);
+    } else if (r.type === "PARENT_OF" && !isLineageKind(r.kind)) {
+      step.add(`${r.fromPersonId}>${r.toPersonId}`);
+    }
+  }
+
+  for (const [child, pars] of Array.from(parents.entries())) {
+    if (pars.length >= 2) continue;
+    const extra: string[] = [];
+    const consider = (spouse: string) => {
+      if (pars.includes(spouse) || extra.includes(spouse)) return;
+      if (step.has(`${spouse}>${child}`)) return;
+      extra.push(spouse);
+    };
+    // Prefer a spouse who is already a parent of a sibling — that's the
+    // other parent of this family, not a later marriage.
+    for (const parent of pars) {
+      const ranked = (spouses.get(parent) ?? []).slice().sort((a, b) => {
+        const aKids = (children?.get(a) ?? []).length;
+        const bKids = (children?.get(b) ?? []).length;
+        return bKids - aKids;
+      });
+      for (const spouse of ranked) {
+        consider(spouse);
+        if (pars.length + extra.length >= 2) break;
+      }
+      if (pars.length + extra.length >= 2) break;
+    }
+    if (!extra.length) continue;
+    parents.set(child, [...pars, ...extra]);
+    if (children) {
+      for (const p of extra) give(children, p, child);
+    }
+  }
 }
 
 /**

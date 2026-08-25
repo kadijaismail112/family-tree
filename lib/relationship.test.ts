@@ -263,4 +263,159 @@ describe("the plain cases are untouched", () => {
     const strangers = [person("a", "A"), person("b", "B")];
     expect(describeRelationship("a", "b", strangers, []).kind).toBe("none");
   });
+
+  it("keeps both sentences when the two terms differ", () => {
+    const r = describeRelationship("dad", "me", people, rels);
+    expect(r.aToB).toBe("Dad is a father of Me.");
+    expect(r.bToA).toBe("Me is a son of Dad.");
+  });
+});
+
+describe("a symmetric tie is only said once", () => {
+  it("drops the inverse for cousins once removed", () => {
+    const people = [
+      person("anc", "Placeholder"),
+      person("a", "A"),
+      person("b", "B"),
+      person("c", "C"),
+      person("d", "D"),
+      person("e", "E"),
+      person("emilia", "Emilia", "female"),
+      person("elileta", "Elileta", "female"),
+    ];
+    const rels = [
+      rel("anc", "a", "PARENT_OF", "biological"),
+      rel("anc", "b", "PARENT_OF", "biological"),
+      rel("a", "c", "PARENT_OF", "biological"),
+      rel("b", "d", "PARENT_OF", "biological"),
+      rel("c", "emilia", "PARENT_OF", "biological"),
+      rel("d", "e", "PARENT_OF", "biological"),
+      rel("e", "elileta", "PARENT_OF", "biological"),
+    ];
+    const r = describeRelationship("emilia", "elileta", people, rels);
+    expect(r.label).toBe("2nd cousins once removed");
+    expect(r.aTerm).toBe(r.bTerm);
+    expect(r.aToB).toBe("Emilia is a 2nd cousin once removed of Elileta.");
+    expect(r.bToA).toBe("");
+  });
+
+  it("still names both directions for an uncle and a niece", () => {
+    const people = [
+      person("mum", "Mum", "female"),
+      person("unc", "Uncle", "male"),
+      person("me", "Me", "female"),
+    ];
+    const rels = [
+      rel("mum", "unc", "SIBLING_OF", "full"),
+      rel("mum", "me", "PARENT_OF", "biological"),
+    ];
+    const r = describeRelationship("unc", "me", people, rels);
+    expect(r.aToB).toBe("Uncle is an uncle of Me.");
+    expect(r.bToA).toBe("Me is a niece of Uncle.");
+  });
+});
+
+/**
+ * A tree grown from one side of the family often records the other parent
+ * only as a spouse. For the claimed person, that spouse is still a parent:
+ * their parents are grandparents, their siblings aunts and uncles. For
+ * relatives on the first side, the other line is still by marriage.
+ */
+describe("both parents' families are blood of the child", () => {
+  const people = [
+    person("me", "Me", "male"),
+    person("mum", "Mum", "female"),
+    person("dad", "Dad", "male"),
+    person("mgf", "Maternal grandpa", "male"),
+    person("aunt", "Maternal aunt", "female"),
+    person("pgf", "Paternal grandpa", "male"),
+    person("unc", "Paternal uncle", "male"),
+  ];
+  const rels = [
+    rel("mum", "me", "PARENT_OF", "biological"),
+    rel("mum", "dad", "SPOUSE_OF", "married"),
+    rel("mgf", "mum", "PARENT_OF", "biological"),
+    rel("mgf", "aunt", "PARENT_OF", "biological"),
+    rel("pgf", "dad", "PARENT_OF", "biological"),
+    rel("pgf", "unc", "PARENT_OF", "biological"),
+  ];
+
+  it("names the spouse-only father a father, not a step-father", () => {
+    expect(termOf("dad", "me", people, rels)).toBe("father");
+    expect(describeRelationship("dad", "me", people, rels).kind).toBe("blood");
+  });
+
+  it("names his parents and siblings as grandparents and uncles", () => {
+    expect(termOf("pgf", "me", people, rels)).toBe("grandfather");
+    expect(termOf("unc", "me", people, rels)).toBe("uncle");
+  });
+
+  it("keeps the mother's side blood too", () => {
+    expect(termOf("mum", "me", people, rels)).toBe("mother");
+    expect(termOf("mgf", "me", people, rels)).toBe("grandfather");
+    expect(termOf("aunt", "me", people, rels)).toBe("aunt");
+  });
+
+  it("colours both lines blood for the claimed child", () => {
+    const claimed = people.map((p) =>
+      p.id === "me" ? { ...p, accountUserId: "u1" } : p
+    );
+    const { bloodIds } = computeKinship(claimed, rels, "u1");
+    for (const id of ["me", "mum", "dad", "mgf", "pgf", "aunt", "unc"]) {
+      expect(bloodIds.has(id), `${id} should be blood of me`).toBe(true);
+    }
+  });
+
+  it("still calls the father's family in-laws of the mother's sister", () => {
+    const r = describeRelationship("unc", "aunt", people, rels);
+    expect(r.kind).not.toBe("blood");
+    expect(r.kind === "marriage" || r.label === "Related by marriage").toBe(true);
+  });
+
+  it("colours the father's line as married-in of a maternal relative", () => {
+    const claimed = people.map((p) =>
+      p.id === "aunt" ? { ...p, accountUserId: "u1" } : p
+    );
+    const { bloodIds } = computeKinship(claimed, rels, "u1");
+    for (const id of ["aunt", "mum", "me", "mgf"]) {
+      expect(bloodIds.has(id), `${id} should be blood of the aunt`).toBe(true);
+    }
+    for (const id of ["dad", "pgf", "unc"]) {
+      expect(bloodIds.has(id), `${id} should be married into the aunt's line`).toBe(
+        false
+      );
+    }
+    expect(termOf("dad", "aunt", people, rels)).toMatch(/in-law|marriage/i);
+  });
+
+  it("works the same when the recorded parent is the father", () => {
+    const people = [
+      person("me", "Me", "female"),
+      person("mum", "Mum", "female"),
+      person("dad", "Dad", "male"),
+      person("pgf", "Paternal grandpa", "male"),
+    ];
+    const rels = [
+      rel("dad", "me", "PARENT_OF", "biological"),
+      rel("mum", "dad", "SPOUSE_OF", "married"),
+      rel("pgf", "dad", "PARENT_OF", "biological"),
+    ];
+    expect(termOf("mum", "me", people, rels)).toBe("mother");
+    expect(termOf("pgf", "me", people, rels)).toBe("grandfather");
+  });
+
+  it("does not promote a recorded step-parent into a blood parent", () => {
+    const ppl = [
+      person("me", "Me", "male"),
+      person("mum", "Mum", "female"),
+      person("sd", "Step-dad", "male"),
+    ];
+    const rs = [
+      rel("mum", "me", "PARENT_OF", "biological"),
+      rel("mum", "sd", "SPOUSE_OF", "married"),
+      rel("sd", "me", "PARENT_OF", "step"),
+    ];
+    expect(describeRelationship("sd", "me", ppl, rs).kind).not.toBe("blood");
+    expect(termOf("sd", "me", ppl, rs)).toBe("step-father");
+  });
 });

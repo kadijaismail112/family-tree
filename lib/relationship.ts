@@ -1,5 +1,6 @@
 import type { Gender, Person, Relationship } from "./types";
 import { isLineageKind, isLineageSiblingKind } from "./types";
+import { inferCoParents } from "./kinship";
 
 /**
  * Names the kinship between two people the way a family would say it —
@@ -262,18 +263,21 @@ function applySiblingLinks(
 function buildMaps(relationships: Relationship[]) {
   const parents = new Map<string, string[]>();
   const spouses = new Map<string, string[]>();
+  const children = new Map<string, string[]>();
   const push = (m: Map<string, string[]>, k: string, v: string) => {
     if (!m.has(k)) m.set(k, []);
     m.get(k)!.push(v);
   };
   for (const r of relationships) {
-    if (r.type === "PARENT_OF" && isLineageKind(r.kind))
+    if (r.type === "PARENT_OF" && isLineageKind(r.kind)) {
       push(parents, r.toPersonId, r.fromPersonId);
-    else if (r.type === "SPOUSE_OF") {
+      push(children, r.fromPersonId, r.toPersonId);
+    } else if (r.type === "SPOUSE_OF") {
       push(spouses, r.fromPersonId, r.toPersonId);
       push(spouses, r.toPersonId, r.fromPersonId);
     }
   }
+  inferCoParents(parents, relationships, children);
   applySiblingLinks(parents, relationships);
   return { parents, spouses };
 }
@@ -386,6 +390,26 @@ function withArticle(term: string) {
   return `${/^[aeiou]/i.test(term) ? "an" : "a"} ${term}`;
 }
 
+/**
+ * The inverse sentence only earns a line when the two terms differ —
+ * "father" / "son". Cousins, siblings of the same wording, and any other
+ * symmetric tie already said the relationship in the first sentence.
+ */
+function directedLines(
+  aName: string,
+  bName: string,
+  aTerm: string,
+  bTerm: string,
+  article: "a" | "the" = "a"
+) {
+  const phrase = (term: string) =>
+    article === "the" ? `the ${term}` : withArticle(term);
+  return {
+    aToB: `${aName} is ${phrase(aTerm)} of ${bName}.`,
+    bToA: aTerm === bTerm ? "" : `${bName} is ${phrase(bTerm)} of ${aName}.`,
+  };
+}
+
 export function describeRelationship(
   aId: string,
   bId: string,
@@ -422,8 +446,7 @@ export function describeRelationship(
       label: pairLabel(blood.kin, ga),
       aTerm,
       bTerm,
-      aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
-      bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
+      ...directedLines(name(aId), name(bId), aTerm, bTerm),
       via:
         named.length > 0
           ? `Common ancestor${named.length > 1 ? "s" : ""}: ${named
@@ -445,8 +468,7 @@ export function describeRelationship(
       label: "Spouses",
       aTerm,
       bTerm,
-      aToB: `${name(aId)} is the ${aTerm} of ${name(bId)}.`,
-      bToA: `${name(bId)} is the ${bTerm} of ${name(aId)}.`,
+      ...directedLines(name(aId), name(bId), aTerm, bTerm, "the"),
       commonAncestorIds: [],
       path,
     };
@@ -464,8 +486,7 @@ export function describeRelationship(
       label: capitalise(aTerm),
       aTerm,
       bTerm,
-      aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
-      bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
+      ...directedLines(name(aId), name(bId), aTerm, bTerm),
       via: `Through ${name(spouse)}, ${name(bId)}'s ${termFor(rel.kin, genderOf(spouse))}`,
       commonAncestorIds: rel.ancestors.filter((id) => !isImplied(id)),
       path,
@@ -482,8 +503,7 @@ export function describeRelationship(
       label: capitalise(aTerm),
       aTerm,
       bTerm,
-      aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
-      bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
+      ...directedLines(name(aId), name(bId), aTerm, bTerm),
       via: `Through ${name(spouse)}, ${name(aId)}'s ${termFor(rel.kin, genderOf(spouse))}`,
       commonAncestorIds: rel.ancestors.filter((id) => !isImplied(id)),
       path,
