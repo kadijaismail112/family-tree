@@ -5,30 +5,44 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { describeRelationship } from "@/lib/relationship";
-import { buildGraph } from "@/lib/beta/world";
-import { WindowedTree } from "@/components/beta/trial2/WindowedTree";
+import {
+  buildHouseholds,
+  homeHouseholdFor,
+  type Household,
+} from "@/lib/beta/household";
+import { HouseholdView } from "@/components/beta/HouseholdView";
 import { LoadingScreen, PrimaryButton } from "@/components/ui";
 
 /**
- * Tree Beta · TRIAL 2 — a window onto the tree, ten people at a time.
+ * Tree Beta — the tree read one household at a time.
  *
- * Trial 1 is still at /beta/trial-1, where each family took the whole screen
- * and the view warped between them.
+ * A tree of four thousand people cannot be drawn. Every attempt to show a
+ * slice of it — a generation, a radius, a bounding box — puts an aunt by
+ * marriage beside a step-parent beside a cousin and calls it a family, which
+ * is how you end up with a picture nobody can read.
  *
- * This shows three generations and no more than ten people, with faint arrows
- * on all four edges to bring the rest in. Lines are drawn only between two
- * people who are both on screen — a line to somebody off the edge tells you
- * nothing and crosses everything else on the way out.
+ * So this never draws a slice. It draws a household: one couple and their
+ * children, the unit people actually think in, and the only unit that stays
+ * the same size no matter how large the tree gets. Everything else is a door.
+ * Walking up through a parent lands you in the house they grew up in, where
+ * their brothers and sisters are simply the other children. Walking down
+ * through a child lands you in the house that child went on to keep.
  *
- * Read-only, like Trial 1.
+ * Read-only: it reads the same store as the main tree and writes nothing.
  */
 
-export default function TreeBetaTrial2Page() {
+interface Step {
+  householdId: string;
+  /** the person you walked through to get here */
+  throughId?: string;
+}
+
+export default function TreeBetaPage() {
   const { familyId } = useParams<{ familyId: string }>();
   const router = useRouter();
   const { state, hydrated, currentUser, loadError, refresh } = useStore();
 
-  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const [trail, setTrail] = useState<Step[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const family = state.families.find((f) => f.id === familyId);
@@ -46,42 +60,65 @@ export default function TreeBetaTrial2Page() {
     () => state.relationships.filter((r) => r.familyId === familyId),
     [state.relationships, familyId]
   );
-  const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
-  const graph = useMemo(
-    () => buildGraph(people, relationships),
+  const houses = useMemo(
+    () => buildHouseholds(people, relationships),
     [people, relationships]
   );
+  const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
 
   const mePersonId = useMemo(
     () => people.find((p) => p.accountUserId === currentUser?.id)?.id ?? null,
     [people, currentUser?.id]
   );
 
+  /**
+   * Where to start. Your own household if you have claimed a node, and
+   * otherwise the fullest house in the tree — a first screen with eight
+   * children on it says more about a family than one with none.
+   */
   const homeId = useMemo(() => {
-    if (mePersonId) return mePersonId;
-    if (!people.length) return null;
-    let best = people[0].id;
-    let bestScore = -1;
-    for (const p of people) {
-      const score =
-        (graph.parents.get(p.id)?.length ?? 0) +
-        (graph.children.get(p.id)?.length ?? 0) * 2 +
-        (graph.spouses.get(p.id)?.length ?? 0);
-      if (score > bestScore) {
-        bestScore = score;
-        best = p.id;
+    if (mePersonId) {
+      const mine = homeHouseholdFor(mePersonId, houses);
+      if (mine) return mine;
+    }
+    let best: string | null = null;
+    let bestSize = -1;
+    for (const house of Array.from(houses.byId.values())) {
+      const size = house.headIds.length + house.childIds.length;
+      if (size > bestSize) {
+        bestSize = size;
+        best = house.id;
       }
     }
     return best;
-  }, [mePersonId, people, graph]);
+  }, [mePersonId, houses]);
 
-  const activeAnchor = anchorId ?? homeId;
+  const currentId = trail.length ? trail[trail.length - 1].householdId : homeId;
+  const house: Household | null = currentId
+    ? houses.byId.get(currentId) ?? null
+    : null;
 
-  /** recentre the window on someone, and their generation */
-  const flyTo = useCallback((personId: string) => {
-    setAnchorId(personId);
-    setSelectedId(personId);
+  const open = useCallback((householdId: string, throughId?: string) => {
+    setTrail((t) => {
+      // walking back to somewhere already on the trail rewinds to it rather
+      // than looping the same houses onto the end
+      const seen = t.findIndex((s) => s.householdId === householdId);
+      if (seen >= 0) return t.slice(0, seen + 1);
+      return [...t, { householdId, throughId }];
+    });
+    setSelectedId(throughId ?? null);
   }, []);
+
+  /** what each person is to you — only ever asked for the dozen on screen */
+  const relationOf = useCallback(
+    (personId: string) => {
+      if (!mePersonId || personId === mePersonId) return undefined;
+      const r = describeRelationship(personId, mePersonId, people, relationships);
+      if (r.aTerm) return `your ${r.aTerm}`;
+      return undefined;
+    },
+    [mePersonId, people, relationships]
+  );
 
   useEffect(() => {
     if (hydrated && !currentUser) {
@@ -91,7 +128,7 @@ export default function TreeBetaTrial2Page() {
     }
   }, [hydrated, currentUser, familyId, router]);
 
-  if (!hydrated) return <LoadingScreen label="Charting the family…" />;
+  if (!hydrated) return <LoadingScreen label="Opening this tree…" />;
   if (!currentUser) return <LoadingScreen label="Taking you to sign in…" />;
 
   if (loadError) {
@@ -122,33 +159,25 @@ export default function TreeBetaTrial2Page() {
     );
   }
 
-  const anchor = activeAnchor ? byId.get(activeAnchor) : null;
+  const nameOf = (id: string) => byId.get(id)?.name.split(" ")[0] ?? "Unknown";
+  const houseName = house
+    ? house.headIds.map(nameOf).join(" & ")
+    : family.name;
   const selected = selectedId ? byId.get(selectedId) : null;
   const selectedRelation =
     selected && mePersonId && selected.id !== mePersonId
       ? describeRelationship(selected.id, mePersonId, people, relationships)
       : null;
 
-  // who the selected person could take you to — their partners are the way
-  // into families this one does not contain
-  const doorsFrom = selected
-    ? (graph.spouses.get(selected.id) ?? []).filter((id) => id !== activeAnchor)
-    : [];
-
   return (
-    <main className="relative flex h-screen h-[100dvh] flex-col overflow-hidden bg-[#080d1c]">
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(45,212,191,0.12),transparent_50%),radial-gradient(circle_at_78%_72%,rgba(129,80,255,0.14),transparent_50%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.55)_0.6px,transparent_0.7px)] [background-size:52px_52px] opacity-[0.1]" />
-      </div>
-
+    <main className="flex h-screen h-[100dvh] flex-col overflow-hidden bg-stone-50">
       {/* ─── Header ─── */}
-      <header className="relative z-30 border-b border-white/10 bg-white/5 backdrop-blur-md">
+      <header className="z-20 shrink-0 border-b border-stone-200/70 bg-white">
         <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5">
           <Link
             href={`/family/${familyId}`}
             aria-label="Back to the main tree"
-            className="shrink-0 rounded-lg p-1.5 text-indigo-200/60 transition hover:bg-white/10 hover:text-white"
+            className="shrink-0 rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -156,72 +185,106 @@ export default function TreeBetaTrial2Page() {
           </Link>
 
           <div className="min-w-0 flex-1">
-            <h1 className="font-display truncate text-base font-semibold leading-tight text-white sm:text-lg">
-              {anchor ? `Around ${anchor.name.split(" ")[0]}` : family.name}
-              <span className="ml-2 rounded-full bg-amber-400/20 px-2 py-0.5 align-middle text-[9px] font-bold uppercase tracking-widest text-amber-300 ring-1 ring-amber-400/40">
-                trial 2
+            <h1 className="font-display truncate text-base font-semibold leading-tight text-stone-900 sm:text-lg">
+              {houseName}
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-[9px] font-bold uppercase tracking-widest text-amber-800">
+                beta
               </span>
             </h1>
-            <p className="truncate text-xs text-indigo-200/40">
-              {family.name} · {people.length}{" "}
-              {people.length === 1 ? "person" : "people"} · ten at a time
+            <p className="truncate text-xs text-stone-400">
+              {house
+                ? `${house.childIds.length} ${
+                    house.childIds.length === 1 ? "child" : "children"
+                  } · ${people.length} in the whole tree`
+                : family.name}
             </p>
-          </div>
-
-          <div className="flex shrink-0 items-center rounded-xl bg-white/10 p-0.5">
-            <Link
-              href={`/family/${familyId}/beta/trial-1`}
-              className="rounded-[10px] px-2.5 py-1.5 text-[11px] font-semibold text-indigo-200/60 transition hover:text-white"
-            >
-              Trial 1
-            </Link>
-            <span className="rounded-[10px] bg-white/15 px-2.5 py-1.5 text-[11px] font-bold text-white">
-              Trial 2
-            </span>
           </div>
 
           {mePersonId && (
             <button
-              onClick={() => flyTo(mePersonId)}
-              className="hidden shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-white/15 sm:block"
+              onClick={() => {
+                const mine = homeHouseholdFor(mePersonId, houses);
+                if (mine) {
+                  setTrail([]);
+                  setSelectedId(mePersonId);
+                }
+              }}
+              className="shrink-0 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:border-teal-700/40 hover:bg-teal-800/5"
             >
-              Find me
+              My household
             </button>
           )}
         </div>
+
+        {/* ─── how you got here ─── */}
+        {trail.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 sm:px-5">
+            <button
+              onClick={() => {
+                setTrail([]);
+                setSelectedId(null);
+              }}
+              className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-stone-500 transition hover:bg-stone-100 hover:text-stone-800"
+            >
+              Start
+            </button>
+            {trail.map((step, i) => {
+              const stepHouse = houses.byId.get(step.householdId);
+              const here = i === trail.length - 1;
+              return (
+                <div key={`${step.householdId}-${i}`} className="flex shrink-0 items-center gap-1">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="text-stone-300">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <button
+                    onClick={() => open(step.householdId, step.throughId)}
+                    className={`rounded-lg px-2 py-1 text-[11px] font-semibold transition ${
+                      here
+                        ? "bg-teal-800/10 text-teal-900"
+                        : "text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                    }`}
+                  >
+                    {stepHouse?.headIds.map(nameOf).join(" & ") ?? "Elsewhere"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </header>
 
-      {/* ─── The canvas ─── */}
-      <div className="relative z-10 flex-1">
-        {!activeAnchor ? (
+      {/* ─── The household ─── */}
+      <div className="flex-1 overflow-auto">
+        {!house ? (
           <div className="flex h-full items-center justify-center px-8 text-center">
-            <p className="max-w-sm text-sm text-indigo-200/50">
-              Nobody is in this tree yet. Add a few people on the main tree and
-              they&apos;ll appear here.
+            <p className="max-w-sm text-sm text-stone-400">
+              No households yet. Once two people in this tree are recorded as
+              parents, or as married, their household will appear here.
             </p>
           </div>
         ) : (
-          <WindowedTree
+          <HouseholdView
+            house={house}
+            houses={houses}
             people={people}
-            relationships={relationships}
             mePersonId={mePersonId}
-            anchorId={activeAnchor}
+            relationOf={relationOf}
             selectedId={selectedId}
             onSelect={setSelectedId}
-            onAnchor={flyTo}
+            onOpen={open}
           />
         )}
       </div>
 
-      {/* ─── Who you tapped, and where they can take you ─── */}
+      {/* ─── Who you tapped ─── */}
       {selected && (
-        <div className="relative z-30 border-t border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md">
-          <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="z-20 shrink-0 border-t border-stone-200 bg-white px-4 py-2.5">
+          <div className="mx-auto flex max-w-3xl items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="font-display truncate text-sm font-semibold text-white">
+              <p className="font-display truncate text-sm font-semibold text-stone-900">
                 {selected.name}
               </p>
-              <p className="truncate text-xs text-indigo-200/50">
+              <p className="truncate text-xs text-stone-500">
                 {selectedRelation?.aTerm
                   ? `Your ${selectedRelation.aTerm}`
                   : selectedRelation
@@ -229,34 +292,22 @@ export default function TreeBetaTrial2Page() {
                     : "This is you"}
               </p>
             </div>
-
-            {/* the spouses are the way through to another family */}
-            {doorsFrom.map((spouseId) => {
-              const spouse = byId.get(spouseId);
-              if (!spouse) return null;
+            {(() => {
+              const theirs = homeHouseholdFor(selected.id, houses);
+              if (!theirs || theirs === currentId) return null;
               return (
                 <button
-                  key={spouseId}
-                  onClick={() => flyTo(spouseId)}
-                  className="shrink-0 rounded-xl bg-amber-400/15 px-3 py-2 text-xs font-semibold text-amber-200 ring-1 ring-amber-400/40 transition hover:bg-amber-400/30"
+                  onClick={() => open(theirs, selected.id)}
+                  className="shrink-0 rounded-xl bg-teal-800 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700"
                 >
-                  Into {spouse.name.split(" ")[0]}&apos;s family →
+                  Their household
                 </button>
               );
-            })}
-
-            {activeAnchor !== selected.id && (
-              <button
-                onClick={() => flyTo(selected.id)}
-                className="shrink-0 rounded-xl bg-teal-400/20 px-3 py-2 text-xs font-semibold text-teal-100 ring-1 ring-teal-400/40 transition hover:bg-teal-400/30"
-              >
-                Centre here
-              </button>
-            )}
+            })()}
             <button
               onClick={() => setSelectedId(null)}
               aria-label="Close"
-              className="shrink-0 rounded-lg p-2 text-indigo-200/50 transition hover:bg-white/10 hover:text-white"
+              className="shrink-0 rounded-lg p-2 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M18 6 6 18M6 6l12 12" />
