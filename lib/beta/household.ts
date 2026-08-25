@@ -155,6 +155,44 @@ export function homeHouseholdFor(
   return houses.bornInto.get(personId) ?? null;
 }
 
+/** the house they grew up in — the non-blood tree you walk into through a spouse */
+export function natalHouseholdFor(
+  personId: string,
+  houses: Households
+): string | null {
+  return houses.bornInto.get(personId) ?? null;
+}
+
+/**
+ * Whose bloodline this sheet is following. The person you walked through, if
+ * they stand in this house; otherwise you, if you do. Colour and the spouse
+ * portal are relative to this person, not a permanent fact about anyone.
+ */
+export function lineageRootFor(
+  house: Household,
+  throughId?: string | null,
+  mePersonId?: string | null
+): string | null {
+  const inHouse = (id: string) =>
+    house.headIds.includes(id) || house.childIds.includes(id);
+  if (throughId && inHouse(throughId)) return throughId;
+  if (mePersonId && inHouse(mePersonId)) return mePersonId;
+  return null;
+}
+
+/**
+ * The other head, when the lineage root is a head of this house. Null when
+ * the root is a child — then both heads are parents, not an in-law portal.
+ */
+export function marriedInHeadId(
+  house: Household,
+  rootId: string | null
+): string | null {
+  if (!rootId || house.headIds.length < 2) return null;
+  if (!house.headIds.includes(rootId)) return null;
+  return house.headIds.find((id) => id !== rootId) ?? null;
+}
+
 export interface Doorway {
   /** the person you step through */
   throughId: string;

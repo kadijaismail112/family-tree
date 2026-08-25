@@ -8,6 +8,7 @@ import { describeRelationship } from "@/lib/relationship";
 import {
   buildHouseholds,
   homeHouseholdFor,
+  natalHouseholdFor,
   type Household,
 } from "@/lib/beta/household";
 import { HouseholdView } from "@/components/beta/HouseholdView";
@@ -94,6 +95,7 @@ export default function TreeBetaPage() {
   }, [mePersonId, houses]);
 
   const currentId = trail.length ? trail[trail.length - 1].householdId : homeId;
+  const throughId = trail.length ? trail[trail.length - 1].throughId : undefined;
   const house: Household | null = currentId
     ? houses.byId.get(currentId) ?? null
     : null;
@@ -193,9 +195,15 @@ export default function TreeBetaPage() {
             </h1>
             <p className="truncate text-xs text-stone-400">
               {house
-                ? `${house.childIds.length} ${
-                    house.childIds.length === 1 ? "child" : "children"
-                  } · ${people.length} in the whole tree`
+                ? [
+                    throughId ? `via ${nameOf(throughId)}` : null,
+                    `${house.childIds.length} ${
+                      house.childIds.length === 1 ? "child" : "children"
+                    }`,
+                    `${people.length} in the whole tree`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
                 : family.name}
             </p>
           </div>
@@ -268,6 +276,7 @@ export default function TreeBetaPage() {
             houses={houses}
             people={people}
             mePersonId={mePersonId}
+            throughId={throughId}
             relationOf={relationOf}
             selectedId={selectedId}
             onSelect={setSelectedId}
@@ -293,15 +302,38 @@ export default function TreeBetaPage() {
               </p>
             </div>
             {(() => {
-              const theirs = homeHouseholdFor(selected.id, houses);
-              if (!theirs || theirs === currentId) return null;
+              const natal = natalHouseholdFor(selected.id, houses);
+              const natalOther = natal && natal !== currentId ? natal : null;
+              const keptOther = (houses.headOf.get(selected.id) ?? []).filter(
+                (id) => id !== currentId
+              );
+              const kept =
+                keptOther.find(
+                  (id) => (houses.byId.get(id)?.childIds.length ?? 0) > 0
+                ) ??
+                keptOther[0] ??
+                null;
+              if (!natalOther && !kept) return null;
+              const first = selected.name.split(" ")[0];
               return (
-                <button
-                  onClick={() => open(theirs, selected.id)}
-                  className="shrink-0 rounded-xl bg-teal-800 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700"
-                >
-                  Their household
-                </button>
+                <>
+                  {natalOther && (
+                    <button
+                      onClick={() => open(natalOther, selected.id)}
+                      className="shrink-0 rounded-xl bg-amber-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-600"
+                    >
+                      Open {first}&apos;s family
+                    </button>
+                  )}
+                  {kept && (
+                    <button
+                      onClick={() => open(kept, selected.id)}
+                      className="shrink-0 rounded-xl bg-teal-800 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700"
+                    >
+                      Their household
+                    </button>
+                  )}
+                </>
               );
             })()}
             <button

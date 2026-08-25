@@ -6,6 +6,9 @@ import {
   doorsUp,
   homeHouseholdFor,
   householdId,
+  lineageRootFor,
+  marriedInHeadId,
+  natalHouseholdFor,
 } from "./household";
 import type { Person, RelationKind, Relationship, RelationType } from "../types";
 
@@ -134,6 +137,48 @@ describe("where somebody's own page opens", () => {
     const relsToo = [...rels, rel("dad", "late", "SPOUSE_OF", "married")];
     const two = buildHouseholds(withSecond, relsToo);
     expect(homeHouseholdFor("dad", two)).toBe(householdId(["dad", "mum"]));
+  });
+});
+
+describe("the natal house is not the one they keep", () => {
+  it("opens a spouse on the house they grew up in, with their siblings", () => {
+    expect(natalHouseholdFor("wife", houses)).toBe(householdId(["wpa", "wma"]));
+    expect(houses.byId.get(natalHouseholdFor("wife", houses)!)!.childIds).toHaveLength(9);
+  });
+
+  it("opens me on my parents' house, not the one I keep with my wife", () => {
+    expect(natalHouseholdFor("me", houses)).toBe(householdId(["dad", "mum"]));
+    expect(homeHouseholdFor("me", houses)).toBe(householdId(["me", "wife"]));
+  });
+
+  it("has no natal house for someone whose parents were never recorded", () => {
+    expect(natalHouseholdFor("gpa", houses)).toBeNull();
+  });
+});
+
+describe("who married into the household you are looking at", () => {
+  it("marks the other head as married-in when you are a head", () => {
+    const mine = H("me", "wife");
+    expect(lineageRootFor(mine, undefined, "me")).toBe("me");
+    expect(marriedInHeadId(mine, "me")).toBe("wife");
+  });
+
+  it("follows the person you walked through, even if that inverts who married in", () => {
+    const mine = H("me", "wife");
+    expect(lineageRootFor(mine, "wife", "me")).toBe("wife");
+    expect(marriedInHeadId(mine, "wife")).toBe("me");
+  });
+
+  it("marks neither parent as married-in when you are a child of the house", () => {
+    const home = H("dad", "mum");
+    expect(lineageRootFor(home, undefined, "me")).toBe("me");
+    expect(marriedInHeadId(home, "me")).toBeNull();
+  });
+
+  it("marks neither head when there is no lineage root in the house", () => {
+    const hers = H("wpa", "wma");
+    expect(lineageRootFor(hers, undefined, "me")).toBeNull();
+    expect(marriedInHeadId(hers, null)).toBeNull();
   });
 });
 
