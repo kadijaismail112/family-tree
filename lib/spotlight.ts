@@ -69,7 +69,7 @@ export function weeklySpotlight(
           relation = `Your ${named.aTerm}`;
           via = named.via;
         } else if (named.kind === "distant") {
-          relation = "Related by marriage";
+          relation = named.label;
           via = named.via;
         }
       }

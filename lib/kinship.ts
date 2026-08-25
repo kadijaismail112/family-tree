@@ -1,5 +1,5 @@
 import type { Lineage, Person, Relationship } from "./types";
-import { isLineageKind } from "./types";
+import { isLineageKind, isLineageSiblingKind } from "./types";
 
 /**
  * Who is related by blood, and who married in.
@@ -75,7 +75,10 @@ export function computeKinship(
   for (const p of people) siblings.set(p.id, []);
   for (const r of relationships) {
     if (r.type !== "SIBLING_OF") continue;
-    if (!isLineageKind(r.kind)) continue;
+    // sibling kinds read "full"/"half", not "biological" — the parent
+    // predicate rejects both, which quietly dropped every sibling link the
+    // Connect form writes and left blood relatives coloured as married in
+    if (!isLineageSiblingKind(r.kind)) continue;
     siblings.get(r.fromPersonId)?.push(r.toPersonId);
     siblings.get(r.toPersonId)?.push(r.fromPersonId);
   }

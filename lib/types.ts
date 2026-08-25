@@ -44,6 +44,30 @@ export function defaultKind(type: RelationType): RelationKind {
 export function isLineageKind(kind: RelationKind | undefined) {
   return kind === undefined || kind === "biological" || kind === "adoptive";
 }
+/**
+ * Siblings have their own vocabulary — "full" and "half" where a parent
+ * would say "biological" — so the parent predicate above answers "no
+ * bloodline" for every sibling link the UI actually writes. They need their
+ * own answer: only a step-sibling arrives without shared blood.
+ */
+export function isLineageSiblingKind(kind: RelationKind | undefined) {
+  return (
+    kind === undefined || kind === "full" || kind === "half" || kind === "adoptive"
+  );
+}
+/**
+ * Does this edge carry a bloodline? The kind alone can't say — "adoptive"
+ * means one thing on a parent and another on a sibling — so the type has to
+ * come with it.
+ */
+export function carriesLineage(
+  type: RelationType,
+  kind: RelationKind | undefined
+) {
+  if (type === "PARENT_OF") return isLineageKind(kind);
+  if (type === "SIBLING_OF") return isLineageSiblingKind(kind);
+  return false;
+}
 
 /** Only ever used to choose the right word — never guessed from a name. */
 export type Gender = "female" | "male" | "other";

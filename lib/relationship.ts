@@ -1,5 +1,5 @@
 import type { Gender, Person, Relationship } from "./types";
-import { isLineageKind } from "./types";
+import { isLineageKind, isLineageSiblingKind } from "./types";
 
 /**
  * Names the kinship between two people the way a family would say it —
@@ -170,6 +170,95 @@ function kinOfSpouseTerm(kin: Kin, gender?: Gender) {
   return `${termFor(kin, gender)} by marriage`;
 }
 
+/**
+ * A forebear the family has told us about without ever adding them: two
+ * people said they were siblings, which is a claim that someone stands above
+ * them both. These ids never name a real person, so they are kept out of
+ * anything shown on screen.
+ */
+const IMPLIED = "\u0000implied:";
+const isImplied = (id: string) => id.startsWith(IMPLIED);
+
+/**
+ * Every term below is worked out from shared ancestors, so a sibling link
+ * that nothing translates into parents is invisible to all of it — which is
+ * how "grandma's brother" came out as related by marriage. This turns the
+ * link into the parent it implies.
+ *
+ * Full siblings pool whatever parents the group has recorded between them,
+ * so a brother added with no parents of his own inherits hers. A group with
+ * nothing recorded gets one stand-in forebear, which is enough for the tie
+ * to read as blood. Half siblings share exactly one and keep a parent of
+ * their own on the other side, so they don't collapse into full siblings.
+ */
+function applySiblingLinks(
+  parents: Map<string, string[]>,
+  relationships: Relationship[]
+) {
+  const fullLinks: [string, string][] = [];
+  const halfLinks: [string, string][] = [];
+  for (const r of relationships) {
+    if (r.type !== "SIBLING_OF") continue;
+    if (r.kind === "half") halfLinks.push([r.fromPersonId, r.toPersonId]);
+    else if (isLineageSiblingKind(r.kind))
+      fullLinks.push([r.fromPersonId, r.toPersonId]);
+  }
+  if (!fullLinks.length && !halfLinks.length) return;
+
+  // siblings of the same person are siblings of each other, so the links
+  // merge into groups rather than staying pairwise
+  const root = new Map<string, string>();
+  const find = (x: string): string => {
+    const seen = root.get(x);
+    if (seen === undefined || seen === x) {
+      root.set(x, x);
+      return x;
+    }
+    const top = find(seen);
+    root.set(x, top);
+    return top;
+  };
+  for (const [a, b] of fullLinks) {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) root.set(ra, rb);
+  }
+
+  const groups = new Map<string, string[]>();
+  for (const id of Array.from(root.keys())) {
+    const top = find(id);
+    if (!groups.has(top)) groups.set(top, []);
+    groups.get(top)!.push(id);
+  }
+
+  const parentsOf = (id: string) => parents.get(id) ?? [];
+  const give = (id: string, parentId: string) => {
+    const list = parentsOf(id);
+    if (!list.includes(parentId)) {
+      list.push(parentId);
+      parents.set(id, list);
+    }
+  };
+
+  for (const [top, members] of Array.from(groups.entries())) {
+    const pooled = new Set<string>();
+    for (const m of members)
+      for (const p of parentsOf(m)) if (!isImplied(p)) pooled.add(p);
+    const shared = pooled.size ? Array.from(pooled) : [`${IMPLIED}${top}`];
+    for (const m of members) for (const p of shared) give(m, p);
+  }
+
+  for (const [a, b] of halfLinks) {
+    if (parentsOf(a).some((p) => parentsOf(b).includes(p))) continue;
+    const pair = `${IMPLIED}half:${[a, b].sort().join("+")}`;
+    give(a, pair);
+    give(b, pair);
+    // the parent they don't share, so the one they do reads as half
+    if (parentsOf(a).length < 2) give(a, `${IMPLIED}only:${a}`);
+    if (parentsOf(b).length < 2) give(b, `${IMPLIED}only:${b}`);
+  }
+}
+
 function buildMaps(relationships: Relationship[]) {
   const parents = new Map<string, string[]>();
   const spouses = new Map<string, string[]>();
@@ -185,6 +274,7 @@ function buildMaps(relationships: Relationship[]) {
       push(spouses, r.toPersonId, r.fromPersonId);
     }
   }
+  applySiblingLinks(parents, relationships);
   return { parents, spouses };
 }
 
@@ -324,6 +414,9 @@ export function describeRelationship(
   if (blood) {
     const aTerm = termFor(blood.kin, ga);
     const bTerm = termFor(invert(blood.kin), gb);
+    // the forebear a sibling link implies has no name to show and no node to
+    // jump to, so it is named for what it is instead of listed as a person
+    const named = blood.ancestors.filter((id) => !isImplied(id));
     return {
       kind: "blood",
       label: pairLabel(blood.kin, ga),
@@ -332,12 +425,14 @@ export function describeRelationship(
       aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
       bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
       via:
-        blood.ancestors.length > 0
-          ? `Common ancestor${blood.ancestors.length > 1 ? "s" : ""}: ${blood.ancestors
+        named.length > 0
+          ? `Common ancestor${named.length > 1 ? "s" : ""}: ${named
               .map(name)
               .join(" and ")}`
-          : undefined,
-      commonAncestorIds: blood.ancestors,
+          : blood.ancestors.length > 0
+            ? "Through a recorded sibling link — the parent they share isn't in the tree yet."
+            : undefined,
+      commonAncestorIds: named,
       path,
     };
   }
@@ -372,7 +467,7 @@ export function describeRelationship(
       aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
       bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
       via: `Through ${name(spouse)}, ${name(bId)}'s ${termFor(rel.kin, genderOf(spouse))}`,
-      commonAncestorIds: rel.ancestors,
+      commonAncestorIds: rel.ancestors.filter((id) => !isImplied(id)),
       path,
     };
   }
@@ -390,15 +485,22 @@ export function describeRelationship(
       aToB: `${name(aId)} is ${withArticle(aTerm)} of ${name(bId)}.`,
       bToA: `${name(bId)} is ${withArticle(bTerm)} of ${name(aId)}.`,
       via: `Through ${name(spouse)}, ${name(aId)}'s ${termFor(rel.kin, genderOf(spouse))}`,
-      commonAncestorIds: rel.ancestors,
+      commonAncestorIds: rel.ancestors.filter((id) => !isImplied(id)),
       path,
     };
   }
 
   if (path) {
+    // "Related by marriage" was the catch-all for every chain we couldn't
+    // name, so a tie running purely through blood relatives got announced as
+    // a marriage. It only earns that wording when a marriage is in the chain.
+    const byId = new Map(relationships.map((r) => [r.id, r]));
+    const throughMarriage = path.relationshipIds.some(
+      (id) => byId.get(id)?.type === "SPOUSE_OF"
+    );
     return {
       kind: "distant",
-      label: "Related by marriage",
+      label: throughMarriage ? "Related by marriage" : "Related through the family",
       aToB: `${name(aId)} and ${name(bId)} are connected through ${
         path.personIds.length - 2
       } ${path.personIds.length - 2 === 1 ? "person" : "people"}, but share no common ancestor.`,

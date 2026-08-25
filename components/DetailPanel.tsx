@@ -502,7 +502,7 @@ function PersonDetail({
                 {toMe.aTerm
                   ? `Your ${toMe.aTerm}`
                   : toMe.kind === "distant"
-                    ? "Related by marriage"
+                    ? toMe.label
                     : "No recorded link to you yet"}
               </p>
               {toMe.via && (

@@ -9,7 +9,7 @@ import {
   type EdgeProps,
 } from "reactflow";
 import type { RelationKind, RelationType } from "@/lib/types";
-import { isLineageKind } from "@/lib/types";
+import { carriesLineage } from "@/lib/types";
 
 export interface RelationshipEdgeData {
   type: RelationType;
@@ -112,9 +112,13 @@ function RelationshipEdgeInner({
         ? "#dc2626"
         : base.stroke;
   // a step/foster tie or a former partnership is real but not a bloodline,
-  // so it reads as a lighter, broken line
+  // so it reads as a lighter, broken line. A partnership is never a bloodline
+  // to begin with, so only "former" softens it — asking the parent-kind
+  // question of a spouse or sibling kind broke every one of those lines.
   const softened =
-    !isLineageKind(data?.kind) || (data?.kind as string) === "former";
+    type === "SPOUSE_OF"
+      ? (data?.kind as string) === "former"
+      : !carriesLineage(type, data?.kind);
   const dash = data?.assumed
     ? "2 6"
     : disputed
