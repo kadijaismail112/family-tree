@@ -32,7 +32,7 @@ const initials = (name: string) =>
     .join("");
 
 /**
- * One person, as a body in space rather than a card in a chart.
+ * TRIAL 1 · One person, as a body in space rather than a card in a chart.
  *
  * The ring carries the meaning: solid for blood, warm and dashed for someone
  * who married in, and a lit halo when their own family is through the door.

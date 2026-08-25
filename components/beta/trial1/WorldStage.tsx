@@ -7,7 +7,7 @@ import { describeRelationship } from "@/lib/relationship";
 import { PersonOrb } from "./PersonOrb";
 
 /**
- * One world, drawn as a stack of generations rather than a chart of lines.
+ * TRIAL 1 · One world, drawn as a stack of generations rather than a chart of lines.
  *
  * A family at this scope is small enough that the rows themselves carry the
  * structure — grandparents on top, grandchildren at the bottom — so the

@@ -4,43 +4,37 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { buildGraph } from "@/lib/beta/world";
 import { describeRelationship } from "@/lib/relationship";
-import { WorldStage } from "@/components/beta/WorldStage";
+import { buildGraph } from "@/lib/beta/world";
+import type { Galaxy } from "@/lib/beta/galaxy";
+import { GalaxyCanvas } from "@/components/beta/trial2/GalaxyCanvas";
 import { LoadingScreen, PrimaryButton } from "@/components/ui";
 
 /**
- * Tree Beta — a sandbox for a different way of reading the same tree.
+ * Tree Beta · TRIAL 2 — one canvas, a moving camera.
  *
- * The main tree draws the whole graph at once, which is honest and becomes a
- * hairball. This one takes the view that a family is not one shape but many
- * overlapping ones, and shows a single world at a time: grandparents down to
- * grandchildren, plus whoever married in. The people who married in are the
- * doors — step through one and you arrive in their family, with your own
- * relationship to everyone there still spelled out.
+ * Trial 1 is still at /beta/trial-1. It gave each family the whole screen and
+ * warped between them, which read beautifully and quietly implied the families
+ * were separate things. This is the other answer to the same question: put
+ * everyone in one space for good, and move the eye instead of the contents.
  *
- * Nothing here writes. It reads the same store as the main tree, so a wrong
- * idea tried out on this page cannot damage a real family's record.
+ * Focus is depth, not deletion. The family you are reading sits on the focal
+ * plane, sharp and named; everyone else is still there, still joined to them,
+ * just further off. Rising a generation lifts the camera rather than loading a
+ * new view, so the ground you were standing on stays in sight below you.
+ *
+ * Read-only, like Trial 1.
  */
 
-/** how far a world can be from your own before the trail is worth showing */
-interface Stop {
-  anchorId: string;
-  /** the person you stepped through to get here */
-  viaId?: string;
-}
-
-type Phase = "idle" | "leaving" | "arriving";
-
-export default function TreeBetaPage() {
+export default function TreeBetaTrial2Page() {
   const { familyId } = useParams<{ familyId: string }>();
   const router = useRouter();
   const { state, hydrated, currentUser, loadError, refresh } = useStore();
 
-  const [trail, setTrail] = useState<Stop[]>([]);
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const [genCursor, setGenCursor] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [galaxy, setGalaxy] = useState<Galaxy | null>(null);
 
   const family = state.families.find((f) => f.id === familyId);
   const isMember =
@@ -57,23 +51,18 @@ export default function TreeBetaPage() {
     () => state.relationships.filter((r) => r.familyId === familyId),
     [state.relationships, familyId]
   );
+  const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const graph = useMemo(
     () => buildGraph(people, relationships),
     [people, relationships]
   );
-  const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
 
   const mePersonId = useMemo(
     () => people.find((p) => p.accountUserId === currentUser?.id)?.id ?? null,
     [people, currentUser?.id]
   );
 
-  /**
-   * Where you start. Your own node when you have one — the tree is about you
-   * before it is about anyone else — and otherwise whoever sits in the middle
-   * of the most family, so the first world is never an empty one.
-   */
-  const homeAnchor = useMemo(() => {
+  const homeId = useMemo(() => {
     if (mePersonId) return mePersonId;
     if (!people.length) return null;
     let best = people[0].id;
@@ -91,32 +80,19 @@ export default function TreeBetaPage() {
     return best;
   }, [mePersonId, people, graph]);
 
-  const current = trail.length ? trail[trail.length - 1] : null;
-  const anchorId = current?.anchorId ?? homeAnchor;
+  const activeAnchor = anchorId ?? homeId;
 
-  /**
-   * The warp. The world you're leaving falls away before the next one
-   * arrives, so the two are never on screen together — that gap is what makes
-   * it read as somewhere else rather than as a filtered list.
-   */
-  const travel = useCallback((toId: string, viaId?: string) => {
-    setPhase("leaving");
-    setSelectedId(null);
-    window.setTimeout(() => {
-      setTrail((t) => [...t, { anchorId: toId, viaId }]);
-      setPhase("arriving");
-      window.setTimeout(() => setPhase("idle"), 420);
-    }, 260);
-  }, []);
+  // the cursor follows whoever you fly to, until you start stepping it yourself
+  const anchorGen = activeAnchor
+    ? galaxy?.nodes.get(activeAnchor)?.generation ?? 0
+    : 0;
+  const cursor = genCursor ?? anchorGen;
 
-  const goBackTo = useCallback((index: number) => {
-    setPhase("leaving");
-    setSelectedId(null);
-    window.setTimeout(() => {
-      setTrail((t) => t.slice(0, index));
-      setPhase("arriving");
-      window.setTimeout(() => setPhase("idle"), 420);
-    }, 260);
+  /** fly to someone: their island, their generation */
+  const flyTo = useCallback((personId: string) => {
+    setAnchorId(personId);
+    setGenCursor(null);
+    setSelectedId(personId);
   }, []);
 
   useEffect(() => {
@@ -158,27 +134,32 @@ export default function TreeBetaPage() {
     );
   }
 
-  const anchor = anchorId ? byId.get(anchorId) : null;
+  const anchor = activeAnchor ? byId.get(activeAnchor) : null;
   const selected = selectedId ? byId.get(selectedId) : null;
   const selectedRelation =
     selected && mePersonId && selected.id !== mePersonId
       ? describeRelationship(selected.id, mePersonId, people, relationships)
       : null;
 
-  const worldName = anchor
-    ? `${anchor.name.split(" ").slice(-1)[0]}'s world`
-    : family.name;
+  // who the selected person could take you to — their partners are the way
+  // into families this one does not contain
+  const doorsFrom = selected
+    ? (graph.spouses.get(selected.id) ?? []).filter((id) => id !== activeAnchor)
+    : [];
+
+  const canRise = !!galaxy && cursor > galaxy.minGeneration;
+  const canDescend = !!galaxy && cursor < galaxy.maxGeneration;
+  const drift = cursor - anchorGen;
 
   return (
-    <main className="relative flex h-screen h-[100dvh] flex-col overflow-hidden bg-[#0b1020]">
-      {/* the space this all sits in */}
+    <main className="relative flex h-screen h-[100dvh] flex-col overflow-hidden bg-[#080d1c]">
       <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(45,212,191,0.14),transparent_45%),radial-gradient(circle_at_80%_75%,rgba(129,80,255,0.16),transparent_45%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.5)_0.6px,transparent_0.7px)] [background-size:44px_44px] opacity-[0.13]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(45,212,191,0.12),transparent_50%),radial-gradient(circle_at_78%_72%,rgba(129,80,255,0.14),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.55)_0.6px,transparent_0.7px)] [background-size:52px_52px] opacity-[0.1]" />
       </div>
 
       {/* ─── Header ─── */}
-      <header className="relative z-20 border-b border-white/10 bg-white/5 backdrop-blur-md">
+      <header className="relative z-30 border-b border-white/10 bg-white/5 backdrop-blur-md">
         <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5">
           <Link
             href={`/family/${familyId}`}
@@ -192,111 +173,109 @@ export default function TreeBetaPage() {
 
           <div className="min-w-0 flex-1">
             <h1 className="font-display truncate text-base font-semibold leading-tight text-white sm:text-lg">
-              {worldName}
+              {anchor ? `Around ${anchor.name.split(" ")[0]}` : family.name}
               <span className="ml-2 rounded-full bg-amber-400/20 px-2 py-0.5 align-middle text-[9px] font-bold uppercase tracking-widest text-amber-300 ring-1 ring-amber-400/40">
-                beta
+                trial 2
               </span>
             </h1>
             <p className="truncate text-xs text-indigo-200/40">
               {family.name} · {people.length}{" "}
-              {people.length === 1 ? "person" : "people"} in the whole tree
+              {people.length === 1 ? "person" : "people"} on one canvas
             </p>
           </div>
 
-          <div className="relative hidden w-52 md:block">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Dim everyone but…"
-              className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-3 pr-3 text-sm text-white outline-none transition placeholder:text-indigo-200/30 focus:border-teal-400/50 focus:ring-2 focus:ring-teal-400/20"
-            />
+          <div className="flex shrink-0 items-center rounded-xl bg-white/10 p-0.5">
+            <Link
+              href={`/family/${familyId}/beta/trial-1`}
+              className="rounded-[10px] px-2.5 py-1.5 text-[11px] font-semibold text-indigo-200/60 transition hover:text-white"
+            >
+              Trial 1
+            </Link>
+            <span className="rounded-[10px] bg-white/15 px-2.5 py-1.5 text-[11px] font-bold text-white">
+              Trial 2
+            </span>
           </div>
 
-          <Link
-            href={`/family/${familyId}`}
-            className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-white/15"
-          >
-            Main tree
-          </Link>
-        </div>
-
-        {/* ─── The trail you travelled ─── */}
-        <div className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5 sm:px-5">
-          <button
-            onClick={() => goBackTo(0)}
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-              trail.length === 0
-                ? "bg-teal-400/20 text-teal-200 ring-1 ring-teal-400/40"
-                : "text-indigo-200/50 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            {mePersonId ? "Your family" : "Home"}
-          </button>
-          {trail.map((stop, i) => {
-            const via = stop.viaId ? byId.get(stop.viaId) : null;
-            const here = i === trail.length - 1;
-            return (
-              <div key={`${stop.anchorId}-${i}`} className="flex shrink-0 items-center gap-1.5">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="text-indigo-300/25">
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-                <button
-                  onClick={() => goBackTo(i + 1)}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                    here
-                      ? "bg-teal-400/20 text-teal-200 ring-1 ring-teal-400/40"
-                      : "text-indigo-200/50 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {via?.name.split(" ")[0] ??
-                    byId.get(stop.anchorId)?.name.split(" ")[0] ??
-                    "Elsewhere"}
-                </button>
-              </div>
-            );
-          })}
+          {mePersonId && (
+            <button
+              onClick={() => flyTo(mePersonId)}
+              className="hidden shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-white/15 sm:block"
+            >
+              Find me
+            </button>
+          )}
         </div>
       </header>
 
-      {/* ─── The world ─── */}
-      <div className="relative z-10 flex-1 overflow-auto">
-        {!anchorId ? (
+      {/* ─── The canvas ─── */}
+      <div className="relative z-10 flex-1">
+        {!activeAnchor ? (
           <div className="flex h-full items-center justify-center px-8 text-center">
             <p className="max-w-sm text-sm text-indigo-200/50">
               Nobody is in this tree yet. Add a few people on the main tree and
-              their worlds will appear here.
+              they&apos;ll appear here.
             </p>
           </div>
         ) : (
-          <div
-            key={anchorId}
-            className={`min-h-full transition-all duration-300 ease-out ${
-              phase === "leaving"
-                ? "scale-[0.82] opacity-0 blur-sm"
-                : phase === "arriving"
-                  ? "animate-[worldArrive_420ms_ease-out]"
-                  : "scale-100 opacity-100 blur-0"
-            }`}
-          >
-            <WorldStage
-              anchorId={anchorId}
-              people={people}
-              relationships={relationships}
-              graph={graph}
-              mePersonId={mePersonId}
-              selectedId={selectedId}
-              search={search}
-              onSelect={(id) => setSelectedId((cur) => (cur === id ? null : id))}
-              onEnter={(id) => travel(id, id)}
-            />
-          </div>
+          <GalaxyCanvas
+            people={people}
+            relationships={relationships}
+            mePersonId={mePersonId}
+            anchorId={activeAnchor}
+            generationCursor={cursor}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onAnchor={flyTo}
+            onGalaxy={setGalaxy}
+          />
         )}
       </div>
 
-      {/* ─── Who you just tapped ─── */}
+      {/* ─── Rising and falling through the generations ─── */}
+      <div className="pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2">
+        <div className="pointer-events-auto flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 p-1.5 backdrop-blur-md">
+          <button
+            onClick={() => setGenCursor(cursor - 1)}
+            disabled={!canRise}
+            aria-label="Up a generation"
+            className="rounded-xl px-2.5 py-2 text-indigo-100 transition hover:bg-white/15 disabled:opacity-25"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m18 15-6-6-6 6" />
+            </svg>
+          </button>
+          <span className="px-1 text-center text-[9px] font-bold uppercase leading-tight tracking-wide text-indigo-200/50">
+            {drift === 0
+              ? "here"
+              : drift < 0
+                ? `${-drift} up`
+                : `${drift} down`}
+          </span>
+          <button
+            onClick={() => setGenCursor(cursor + 1)}
+            disabled={!canDescend}
+            aria-label="Down a generation"
+            className="rounded-xl px-2.5 py-2 text-indigo-100 transition hover:bg-white/15 disabled:opacity-25"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          {drift !== 0 && (
+            <button
+              onClick={() => setGenCursor(null)}
+              className="mt-0.5 rounded-lg px-1.5 py-1 text-[9px] font-bold uppercase tracking-wide text-teal-300 transition hover:bg-white/15"
+            >
+              back
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Who you tapped, and where they can take you ─── */}
       {selected && (
-        <div className="relative z-20 border-t border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md">
-          <div className="mx-auto flex max-w-3xl items-center gap-3">
+        <div className="relative z-30 border-t border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md">
+          <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-2">
             <div className="min-w-0 flex-1">
               <p className="font-display truncate text-sm font-semibold text-white">
                 {selected.name}
@@ -307,15 +286,30 @@ export default function TreeBetaPage() {
                   : selectedRelation
                     ? selectedRelation.label
                     : "This is you"}
-                {selectedRelation?.via ? ` · ${selectedRelation.via}` : ""}
               </p>
             </div>
-            {anchorId !== selected.id && (
+
+            {/* the spouses are the way through to another family */}
+            {doorsFrom.map((spouseId) => {
+              const spouse = byId.get(spouseId);
+              if (!spouse) return null;
+              return (
+                <button
+                  key={spouseId}
+                  onClick={() => flyTo(spouseId)}
+                  className="shrink-0 rounded-xl bg-amber-400/15 px-3 py-2 text-xs font-semibold text-amber-200 ring-1 ring-amber-400/40 transition hover:bg-amber-400/30"
+                >
+                  Into {spouse.name.split(" ")[0]}&apos;s family →
+                </button>
+              );
+            })}
+
+            {activeAnchor !== selected.id && (
               <button
-                onClick={() => travel(selected.id, selected.id)}
+                onClick={() => flyTo(selected.id)}
                 className="shrink-0 rounded-xl bg-teal-400/20 px-3 py-2 text-xs font-semibold text-teal-100 ring-1 ring-teal-400/40 transition hover:bg-teal-400/30"
               >
-                Centre on them
+                Fly here
               </button>
             )}
             <button
