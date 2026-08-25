@@ -277,6 +277,20 @@ export default function FamilyPage() {
             ))}
           </div>
 
+          {/* Tree Beta — a separate page for trying new layouts out. Nothing
+              on it writes, and nothing on this page depends on it. */}
+          <Link
+            href={`/family/${familyId}/beta`}
+            className="hidden shrink-0 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/60 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 sm:flex"
+            title="Try the experimental world view"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="4" />
+              <ellipse cx="12" cy="12" rx="10" ry="4.5" transform="rotate(-24 12 12)" />
+            </svg>
+            Beta
+          </Link>
+
           {/* Search */}
           <div className="relative hidden w-56 md:block">
             <svg
