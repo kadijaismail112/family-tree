@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { allSuggestions, type Suggestion } from "@/lib/suggestions";
 import { useState } from "react";
 import { Modal, PrimaryButton, useAction, useToast } from "./ui";
+import { CoupleSuggestionActions } from "./CoupleStatusField";
 
 /**
  * A queue for every assumed connection in the family. Without this the only
@@ -56,16 +57,19 @@ export function ReviewModal({
           : `both parents of ${first(s.viaPersonId)}`;
 
   // Bulk-confirming asserts every one of these under your name, so it takes
-  // a deliberate second press rather than a single click.
+  // a deliberate second press rather than a single click. Shared-child
+  // guesses need an explicit Married / Partners / Not a couple answer, so
+  // they stay out of the batch.
+  const bulk = suggestions.filter((s) => s.reasonKind !== "sharedChild");
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const confirmAll = async () => {
     if (busy) return;
     setBusy(true);
-    const total = suggestions.length;
+    const total = bulk.length;
     let added = 0;
     let firstError: string | null = null;
-    for (const s of suggestions) {
+    for (const s of bulk) {
       try {
         const res = await addRelationship(familyId, s.fromPersonId, s.toPersonId, s.type, undefined, {
           alsoConfirm: true,
@@ -114,7 +118,11 @@ export function ReviewModal({
             {suggestions.map((s) => (
               <li
                 key={s.key}
-                className="flex items-center gap-2 rounded-xl border border-stone-100 bg-white px-3 py-2"
+                className={
+                  s.reasonKind === "sharedChild"
+                    ? "rounded-xl border border-stone-100 bg-white px-3 py-2"
+                    : "flex items-center gap-2 rounded-xl border border-stone-100 bg-white px-3 py-2"
+                }
               >
                 <button
                   onClick={() => {
@@ -130,53 +138,69 @@ export function ReviewModal({
                     {reason(s)}
                   </span>
                 </button>
-                <button
-                  disabled={pending || busy}
-                  onClick={() =>
-                    void run(
-                      () =>
-                        addRelationship(
-                          familyId,
-                          s.fromPersonId,
-                          s.toPersonId,
-                          s.type,
-                          undefined,
-                          { alsoConfirm: true }
-                        ),
-                      { success: "Connection added", failure: "Couldn't add that" }
-                    )
-                  }
-                  aria-label="Confirm"
-                  title="Confirm"
-                  className="shrink-0 rounded-lg bg-teal-800 p-1.5 text-white transition hover:bg-teal-700 disabled:opacity-50"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                </button>
-                <button
-                  disabled={pending || busy}
-                  onClick={() =>
-                    void run(() => dismissSuggestion(familyId, s.key), {
-                      failure: "Couldn't dismiss that",
-                    })
-                  }
-                  aria-label="Deny"
-                  title="Deny"
-                  className="shrink-0 rounded-lg border border-stone-200 p-1.5 text-stone-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                </button>
+                {s.reasonKind === "sharedChild" ? (
+                  <CoupleSuggestionActions
+                    familyId={familyId}
+                    fromPersonId={s.fromPersonId}
+                    toPersonId={s.toPersonId}
+                    suggestionKey={s.key}
+                    disabled={pending || busy}
+                    compact
+                  />
+                ) : (
+                  <>
+                    <button
+                      disabled={pending || busy}
+                      onClick={() =>
+                        void run(
+                          () =>
+                            addRelationship(
+                              familyId,
+                              s.fromPersonId,
+                              s.toPersonId,
+                              s.type,
+                              undefined,
+                              { alsoConfirm: true }
+                            ),
+                          { success: "Connection added", failure: "Couldn't add that" }
+                        )
+                      }
+                      aria-label="Confirm"
+                      title="Confirm"
+                      className="shrink-0 rounded-lg bg-teal-800 p-1.5 text-white transition hover:bg-teal-700 disabled:opacity-50"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    </button>
+                    <button
+                      disabled={pending || busy}
+                      onClick={() =>
+                        void run(() => dismissSuggestion(familyId, s.key), {
+                          failure: "Couldn't dismiss that",
+                        })
+                      }
+                      aria-label="Deny"
+                      title="Deny"
+                      className="shrink-0 rounded-lg border border-stone-200 p-1.5 text-stone-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
           <div className="mt-4 border-t border-stone-100 pt-3">
             {armed && (
               <p className="mb-2 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs leading-relaxed text-amber-800">
-                All {suggestions.length} will be added as asserted by you, and
+                All {bulk.length} will be added as asserted by you, and
                 anyone in the family can dispute them afterwards.
+                {suggestions.length > bulk.length
+                  ? " Couple guesses still need Married, Partners, or Not a couple."
+                  : ""}
               </p>
             )}
             <div className="flex items-center justify-between">
@@ -192,17 +216,19 @@ export function ReviewModal({
                     Cancel
                   </button>
                 )}
-                <PrimaryButton
-                  onClick={() => (armed ? void confirmAll() : setArmed(true))}
-                  disabled={busy || pending}
-                  className="!py-2 text-xs"
-                >
-                  {busy
-                    ? "Adding…"
-                    : armed
-                      ? `Yes, add all ${suggestions.length}`
-                      : "Confirm all"}
-                </PrimaryButton>
+                {bulk.length > 0 && (
+                  <PrimaryButton
+                    onClick={() => (armed ? void confirmAll() : setArmed(true))}
+                    disabled={busy || pending}
+                    className="!py-2 text-xs"
+                  >
+                    {busy
+                      ? "Adding…"
+                      : armed
+                        ? `Yes, add all ${bulk.length}`
+                        : "Confirm all"}
+                  </PrimaryButton>
+                )}
               </div>
             </div>
           </div>

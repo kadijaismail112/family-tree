@@ -23,6 +23,12 @@ export const SPOUSE_KINDS: { value: SpouseKind; label: string }[] = [
   { value: "engaged", label: "Engaged" },
   { value: "former", label: "Former partners" },
 ];
+
+/**
+ * Asked whenever two parents of a child are being recorded: married, partners
+ * without a marriage, or not a couple at all. "none" writes no SPOUSE_OF edge.
+ */
+export type CoupleStatus = "married" | "partner" | "none";
 export const SIBLING_KINDS: { value: SiblingKind; label: string }[] = [
   { value: "full", label: "Full siblings" },
   { value: "half", label: "Half siblings" },

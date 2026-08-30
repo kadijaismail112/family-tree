@@ -113,11 +113,13 @@ function RelationshipEdgeInner({
         : base.stroke;
   // a step/foster tie or a former partnership is real but not a bloodline,
   // so it reads as a lighter, broken line. A partnership is never a bloodline
-  // to begin with, so only "former" softens it — asking the parent-kind
-  // question of a spouse or sibling kind broke every one of those lines.
+  // to begin with, so only "former" uses that faded dash — "partner"/"engaged"
+  // get a tighter dash so they do not look like a marriage.
+  const k = data?.kind as string | undefined;
+  const partnerLike = type === "SPOUSE_OF" && (k === "partner" || k === "engaged");
   const softened =
     type === "SPOUSE_OF"
-      ? (data?.kind as string) === "former"
+      ? k === "former"
       : !carriesLineage(type, data?.kind);
   const dash = data?.assumed
     ? "2 6"
@@ -125,7 +127,9 @@ function RelationshipEdgeInner({
       ? "7 5"
       : softened
         ? "9 6"
-        : base.dash;
+        : partnerLike
+          ? "5 4"
+          : base.dash;
 
   const hasTally = ((data?.confirms ?? 0) > 0 || disputed) && !data?.dimmed && !data?.assumed;
 
@@ -142,9 +146,11 @@ function RelationshipEdgeInner({
             ? 0.08
             : softened || data?.assumed
               ? 0.55
-              : selected || data?.highlighted
-                ? 1
-                : 0.85,
+              : partnerLike
+                ? 0.7
+                : selected || data?.highlighted
+                  ? 1
+                  : 0.85,
           transition: "opacity 0.2s ease, stroke-width 0.2s ease",
         }}
       />

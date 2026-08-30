@@ -12,6 +12,7 @@ import React, {
 import type {
   Confirmation,
   ConfirmationType,
+  CoupleStatus,
   DetailKey,
   EditRecord,
   Gender,
@@ -22,6 +23,7 @@ import type {
   Store,
   User,
 } from "./types";
+import { suggestionKey } from "./suggestions";
 import { createClient } from "@/lib/supabase/client";
 import { EMPTY_STORE, loadStore } from "@/lib/supabase/load";
 import { GALLERY_PHOTOS_ENABLED } from "./features";
@@ -52,6 +54,9 @@ export interface AddPersonInput {
     anchorPersonId: string;
     kind: "parent" | "child" | "spouse" | "sibling";
     secondParentId?: string;
+    /** The other parent in a couple-status question, when one is being asked. */
+    coupleWithPersonId?: string;
+    coupleStatus?: CoupleStatus;
   };
 }
 
@@ -100,7 +105,8 @@ interface StoreApi {
   addChildren: (
     familyId: string,
     parentIds: string[],
-    children: { name: string; birthYear?: string; gender?: Gender }[]
+    children: { name: string; birthYear?: string; gender?: Gender }[],
+    coupleStatus?: CoupleStatus
   ) => Promise<number>;
 
   addRelationship: (
@@ -201,6 +207,51 @@ function personFromRow(
     voiceNameUrl:
       mapped.voiceNameUrl ?? (row.voice_name_path ? prev?.voiceNameUrl : undefined),
   };
+}
+
+/**
+ * Record whether two parents are a couple. Married/partners writes SPOUSE_OF;
+ * "not a couple" dismisses the shared-child suggestion so the canvas does not
+ * keep drawing them as an assumed pair.
+ */
+async function persistCoupleStatus(
+  familyId: string,
+  personA: string,
+  personB: string,
+  status: CoupleStatus,
+  userId: string | null
+): Promise<{ edge?: Relationship; dismissedKey?: string; error?: string }> {
+  if (personA === personB) return {};
+  const supabase = createClient();
+  if (status === "none") {
+    const key = suggestionKey("SPOUSE_OF", personA, personB);
+    const { error } = await supabase.from("dismissed_suggestions").insert({
+      family_id: familyId,
+      key,
+      dismissed_by: userId,
+    });
+    if (error && error.code !== "23505") {
+      return { error: friendlyError(error.message, error.code) };
+    }
+    return { dismissedKey: key };
+  }
+  const { data, error } = await supabase
+    .from("relationships")
+    .insert({
+      family_id: familyId,
+      from_person_id: personA,
+      to_person_id: personB,
+      type: "spouse_of",
+      kind: status,
+    })
+    .select()
+    .single();
+  if (error) {
+    // Already recorded as spouses — the unique pair index fires.
+    if (error.code === "23505") return {};
+    return { error: friendlyError(error.message, error.code) };
+  }
+  return { edge: data ? mapRelationship(data) : undefined };
 }
 
 /** How long a personal invite stays good for, unless a caller says otherwise. */
@@ -429,8 +480,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // raised after the refresh — by which point they can see who to connect.
       let linkFailure: string | null = null;
       const newEdges: Relationship[] = [];
+      let dismissedKey: string | undefined;
       if (input.relation) {
-        const { anchorPersonId, kind, secondParentId } = input.relation;
+        const { anchorPersonId, kind, secondParentId, coupleWithPersonId, coupleStatus } =
+          input.relation;
         const type: RelationType =
           kind === "spouse" ? "SPOUSE_OF" : kind === "sibling" ? "SIBLING_OF" : "PARENT_OF";
         const fromPersonId = kind === "parent" ? data.id : anchorPersonId;
@@ -468,6 +521,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             linkFailure = `${data.name} was added and linked to one parent, but the second parent couldn't be connected: ${friendlyError(coParentError.message, coParentError.code)}`;
           } else if (coEdge) newEdges.push(mapRelationship(coEdge));
         }
+
+        if (!linkFailure && coupleStatus && coupleWithPersonId) {
+          const coupleA = kind === "parent" ? data.id : anchorPersonId;
+          const couple = await persistCoupleStatus(
+            familyId,
+            coupleA,
+            coupleWithPersonId,
+            coupleStatus,
+            userId
+          );
+          if (couple.error) {
+            linkFailure =
+              coupleStatus === "none"
+                ? `${data.name} was added, but we couldn't record that the parents aren't a couple: ${couple.error}`
+                : `${data.name} was added, but the couple connection couldn't be saved: ${couple.error}`;
+          } else {
+            if (couple.edge) newEdges.push(couple.edge);
+            dismissedKey = couple.dismissedKey;
+          }
+        }
       }
 
       const person = personFromRow(data);
@@ -475,6 +548,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         ...s,
         people: upsert(s.people, person),
         relationships: newEdges.reduce(upsert, s.relationships),
+        dismissedSuggestions:
+          dismissedKey && !s.dismissedSuggestions.includes(dismissedKey)
+            ? [...s.dismissedSuggestions, dismissedKey]
+            : s.dismissedSuggestions,
       }));
 
       if (linkFailure) {
@@ -486,7 +563,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       return person;
     },
-    []
+    [userId]
   );
 
   const updatePerson = useCallback(
@@ -543,7 +620,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (
       familyId: string,
       parentIds: string[],
-      children: { name: string; birthYear?: string; gender?: Gender }[]
+      children: { name: string; birthYear?: string; gender?: Gender }[],
+      coupleStatus?: CoupleStatus
     ) => {
       const rows = children.filter((c) => c.name.trim());
       if (rows.length === 0) return 0;
@@ -559,22 +637,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) throw new Error(friendlyError(error.message));
       const ids = data ?? [];
-      if (ids.length > 0) {
+      const coupleEdges: Relationship[] = [];
+      let dismissedKey: string | undefined;
+      let coupleError: string | undefined;
+      if (coupleStatus && parentIds.length === 2) {
+        const couple = await persistCoupleStatus(
+          familyId,
+          parentIds[0],
+          parentIds[1],
+          coupleStatus,
+          userId
+        );
+        if (couple.error) {
+          coupleError =
+            coupleStatus === "none"
+              ? `Children were added, but we couldn't record that the parents aren't a couple: ${couple.error}`
+              : `Children were added, but the couple connection couldn't be saved: ${couple.error}`;
+        } else {
+          if (couple.edge) coupleEdges.push(couple.edge);
+          dismissedKey = couple.dismissedKey;
+        }
+      }
+      if (ids.length > 0 || coupleEdges.length > 0 || dismissedKey) {
         // Two narrow reads for the rows just created, rather than a reload of
         // everything to find them.
-        const [{ data: kids }, { data: edges }] = await Promise.all([
-          supabase.from("people").select("*").in("id", ids),
-          supabase.from("relationships").select("*").in("to_person_id", ids),
-        ]);
+        const [{ data: kids }, { data: edges }] = ids.length
+          ? await Promise.all([
+              supabase.from("people").select("*").in("id", ids),
+              supabase.from("relationships").select("*").in("to_person_id", ids),
+            ])
+          : [{ data: [] }, { data: [] }];
         setState((s) => ({
           ...s,
           people: (kids ?? []).map((r) => personFromRow(r)).reduce(upsert, s.people),
-          relationships: (edges ?? []).map(mapRelationship).reduce(upsert, s.relationships),
+          relationships: [...(edges ?? []).map(mapRelationship), ...coupleEdges].reduce(
+            upsert,
+            s.relationships
+          ),
+          dismissedSuggestions:
+            dismissedKey && !s.dismissedSuggestions.includes(dismissedKey)
+              ? [...s.dismissedSuggestions, dismissedKey]
+              : s.dismissedSuggestions,
         }));
       }
+      if (coupleError) throw new Error(coupleError);
       return ids.length || rows.length;
     },
-    []
+    [userId]
   );
 
   const deletePerson = useCallback(

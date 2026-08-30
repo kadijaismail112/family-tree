@@ -36,6 +36,7 @@ import {
 } from "./ui";
 import { PersonExtras } from "./PersonExtras";
 import { GeezInput } from "./GeezInput";
+import { CoupleSuggestionActions } from "./CoupleStatusField";
 
 export function DetailPanel({
   selection,
@@ -596,7 +597,16 @@ function PersonDetail({
                         {s.reasonKind === "sharedChild" &&
                           `They're both parents of ${first(via.name)}.`}
                       </p>
-                      <div className="mt-2 flex gap-1.5">
+                      {s.reasonKind === "sharedChild" ? (
+                        <CoupleSuggestionActions
+                          familyId={person.familyId}
+                          fromPersonId={s.fromPersonId}
+                          toPersonId={s.toPersonId}
+                          suggestionKey={s.key}
+                          disabled={pending}
+                        />
+                      ) : (
+                        <div className="mt-2 flex gap-1.5">
                         <button
                           disabled={pending}
                           onClick={() =>
@@ -612,9 +622,7 @@ function PersonDetail({
                                 success:
                                   s.type === "PARENT_OF"
                                     ? `${from.name} added as a parent`
-                                    : s.type === "SIBLING_OF"
-                                      ? "Siblings connected"
-                                      : "Partners connected",
+                                    : "Siblings connected",
                                 failure: "Couldn't add that",
                               }
                             )
@@ -640,7 +648,8 @@ function PersonDetail({
                           </svg>
                           Deny
                         </button>
-                      </div>
+                        </div>
+                      )}
                     </li>
                   );
                 })}

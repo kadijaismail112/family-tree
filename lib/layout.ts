@@ -2,8 +2,8 @@ import type { Person, Relationship } from "./types";
 
 export const NODE_W = 190;
 export const NODE_H = 82;
-const X_GAP = 60; // between units in a row
-const COUPLE_GAP = 24; // between spouses in a couple unit
+export const X_GAP = 60; // between units in a row
+export const COUPLE_GAP = 24; // between spouses (or co-parents) in a unit
 const Y_GAP = 110;
 const COMPONENT_GAP = 160;
 
@@ -19,9 +19,12 @@ export interface Positioned {
  *  1. Split into connected components.
  *  2. Within a component, assign generations by relaxation:
  *     PARENT_OF pushes child one level below parent; SPOUSE/SIBLING equalize.
- *  3. Group spouses into "couple units", order units in each row by the
- *     average x of their parents (barycenter), then lay rows out with
- *     collision-free spacing, centered per row.
+ *  3. Group spouses into "couple units". Unmarried co-parents of the same
+ *     child become a matching unit so they sit together without a marriage
+ *     bar; a co-parent of someone already in a couple is pinned beside that
+ *     couple. Order units in each row by the average x of their parents
+ *     (barycenter), then lay rows out with collision-free spacing, centered
+ *     per row.
  */
 export function layoutTree(
   people: Person[],
@@ -155,6 +158,21 @@ export function layoutTree(
     }
     const unitOf = new Map<string, Unit>();
     const units: Unit[] = [];
+    const makeUnit = (members: string[]): Unit => ({
+      members,
+      generation: gen.get(members[0])!,
+      x: 0,
+      width: members.length * NODE_W + (members.length - 1) * COUPLE_GAP,
+    });
+    const addUnit = (u: Unit) => {
+      units.push(u);
+      u.members.forEach((m) => unitOf.set(m, u));
+    };
+    const dropUnit = (u: Unit) => {
+      const i = units.indexOf(u);
+      if (i >= 0) units.splice(i, 1);
+    };
+
     for (const id of compIds) {
       if (unitOf.has(id)) continue;
       const partner = spouseOf.get(id);
@@ -162,14 +180,67 @@ export function layoutTree(
         partner && gen.get(partner) === gen.get(id) && !unitOf.has(partner)
           ? [id, partner]
           : [id];
-      const unit: Unit = {
-        members,
-        generation: gen.get(id)!,
-        x: 0,
-        width: members.length * NODE_W + (members.length - 1) * COUPLE_GAP,
-      };
-      members.forEach((m) => unitOf.set(m, unit));
-      units.push(unit);
+      addUnit(makeUnit(members));
+    }
+
+    // Unmarried co-parents of the same child would otherwise be separate
+    // units, ordered by their own ancestors, and end up on opposite sides of
+    // the row. Pair them the same way spouses are paired — the canvas still
+    // draws two parent lines, not a marriage bar, because there is no
+    // SPOUSE_OF edge.
+    const coparents = new Map<string, string[]>();
+    compIds.forEach((id) => coparents.set(id, []));
+    const giveCoparent = (a: string, b: string) => {
+      if (a === b) return;
+      if (gen.get(a) !== gen.get(b)) return;
+      const list = coparents.get(a);
+      if (list && !list.includes(b)) list.push(b);
+    };
+    {
+      const parentsByChild = new Map<string, string[]>();
+      for (const r of compRels) {
+        if (r.type !== "PARENT_OF") continue;
+        const list = parentsByChild.get(r.toPersonId);
+        if (list) list.push(r.fromPersonId);
+        else parentsByChild.set(r.toPersonId, [r.fromPersonId]);
+      }
+      for (const pars of Array.from(parentsByChild.values())) {
+        for (let i = 0; i < pars.length; i++) {
+          for (let j = i + 1; j < pars.length; j++) {
+            giveCoparent(pars[i], pars[j]);
+            giveCoparent(pars[j], pars[i]);
+          }
+        }
+      }
+    }
+    for (const id of compIds) {
+      const u = unitOf.get(id);
+      if (!u || u.members.length > 1) continue;
+      const other = (coparents.get(id) ?? []).find((oid) => {
+        const ou = unitOf.get(oid);
+        return ou && ou !== u && ou.members.length === 1 && gen.get(oid) === gen.get(id);
+      });
+      if (!other) continue;
+      const otherUnit = unitOf.get(other)!;
+      dropUnit(u);
+      dropUnit(otherUnit);
+      addUnit(makeUnit([id, other]));
+    }
+
+    // A co-parent of someone already in a couple (remarried) stays their own
+    // unit, pinned to that couple's side so they are not shoved across the row.
+    const satelliteOf = new Map<Unit, { hub: Unit; side: "left" | "right" }>();
+    for (const id of compIds) {
+      const u = unitOf.get(id);
+      if (!u || u.members.length > 1 || satelliteOf.has(u)) continue;
+      const hubMember = (coparents.get(id) ?? []).find((oid) => {
+        const ou = unitOf.get(oid);
+        return ou && ou.members.length > 1 && ou.generation === u.generation;
+      });
+      if (!hubMember) continue;
+      const hub = unitOf.get(hubMember)!;
+      const idx = hub.members.indexOf(hubMember);
+      satelliteOf.set(u, { hub, side: idx <= 0 ? "left" : "right" });
     }
 
     const parentsOf = new Map<string, string[]>();
@@ -213,17 +284,35 @@ export function layoutTree(
       return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
     };
 
-    // order each row by where its parents sit, then pack left to right
+    // order each row by where its parents sit, then pack left to right.
+    // Co-parent units and a couple-plus-satellite block score as one target
+    // so other people on the row cannot sit between the child's parents.
     for (let g = 0; g < rows.length; g++) {
-      const scored = rows[g].map((u, i) => ({
-        u,
-        i,
-        s: baryOf(u, parentsOf, (pg) => pg < g),
-      }));
+      const row = rows[g];
+      const hubs = row.filter((u) => !satelliteOf.has(u));
+      const scored = hubs.map((hub, i) => {
+        const left = row.filter(
+          (u) => satelliteOf.get(u)?.hub === hub && satelliteOf.get(u)!.side === "left"
+        );
+        const right = row.filter(
+          (u) => satelliteOf.get(u)?.hub === hub && satelliteOf.get(u)!.side === "right"
+        );
+        const block = [...left, hub, ...right];
+        const xs: number[] = [];
+        for (const u of block) {
+          const s = baryOf(u, parentsOf, (pg) => pg < g);
+          if (s !== null) xs.push(s);
+        }
+        return {
+          block,
+          i,
+          s: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null,
+        };
+      });
       scored.sort(
         (a, b) => (a.s ?? a.i * 1e4) - (b.s ?? b.i * 1e4) || a.i - b.i
       );
-      rows[g] = scored.map((x) => x.u);
+      rows[g] = scored.flatMap((x) => x.block);
       let cursor = 0;
       for (const u of rows[g]) {
         u.x = cursor + u.width / 2;

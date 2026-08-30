@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { spousesOf } from "@/lib/helpers";
-import type { Gender, Person } from "@/lib/types";
+import type { CoupleStatus, Gender, Person } from "@/lib/types";
 import { GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
 import { PersonPicker } from "./PersonPicker";
+import { CoupleStatusField } from "./CoupleStatusField";
 
 interface Row {
   name: string;
@@ -40,6 +41,7 @@ export function AddChildrenModal({
   const { run, pending } = useAction();
   const [rows, setRows] = useState<Row[]>([blank(), blank(), blank()]);
   const [secondParentId, setSecondParentId] = useState("");
+  const [coupleStatus, setCoupleStatus] = useState<CoupleStatus | "">("");
 
   const parent = people.find((p) => p.id === parentId) ?? null;
   const spouseIds = parentId ? spousesOf(state.relationships, parentId) : [];
@@ -48,6 +50,7 @@ export function AddChildrenModal({
     if (!open) return;
     setRows([blank(), blank(), blank()]);
     setSecondParentId(spouseIds[0] ?? "");
+    setCoupleStatus("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, parentId]);
 
@@ -56,9 +59,12 @@ export function AddChildrenModal({
 
   const filled = rows.filter((r) => r.name.trim());
   const secondParent = people.find((p) => p.id === secondParentId) ?? null;
+  const alreadySpouses = secondParentId ? spouseIds.includes(secondParentId) : false;
+  const showCouple = !!secondParent && !alreadySpouses;
 
   const submit = () => {
     if (!parentId || filled.length === 0) return;
+    if (showCouple && !coupleStatus) return;
     const parentIds = secondParentId ? [parentId, secondParentId] : [parentId];
     return run(async () => {
       const n = await addChildren(
@@ -68,7 +74,8 @@ export function AddChildrenModal({
           name: r.name,
           birthYear: r.birthYear,
           gender: r.gender || undefined,
-        }))
+        })),
+        showCouple && coupleStatus ? coupleStatus : undefined
       );
       toast(`Added ${n} ${n === 1 ? "child" : "children"}`);
       onClose();
@@ -89,9 +96,22 @@ export function AddChildrenModal({
             label="Other parent"
             people={people.filter((p) => p.id !== parentId)}
             value={secondParentId}
-            onChange={setSecondParentId}
+            onChange={(id) => {
+              setSecondParentId(id);
+              setCoupleStatus("");
+            }}
             mePersonId={mePersonId}
             noneLabel={`Just ${parent?.name.split(" ")[0] ?? "one parent"}`}
+          />
+        </div>
+      )}
+      {showCouple && parent && secondParent && (
+        <div className="mb-4">
+          <CoupleStatusField
+            aName={parent.name}
+            bName={secondParent.name}
+            value={coupleStatus}
+            onChange={setCoupleStatus}
           />
         </div>
       )}
@@ -160,7 +180,7 @@ export function AddChildrenModal({
         <GhostButton type="button" onClick={onClose}>
           Cancel
         </GhostButton>
-        <PrimaryButton onClick={() => void submit()} disabled={filled.length === 0 || pending}>
+        <PrimaryButton onClick={() => void submit()} disabled={filled.length === 0 || pending || (showCouple && !coupleStatus)}>
           {pending
             ? "Adding…"
             : `Add ${filled.length || ""} ${filled.length === 1 ? "child" : "children"}`}

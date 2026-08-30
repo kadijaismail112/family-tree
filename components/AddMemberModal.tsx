@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { spousesOf } from "@/lib/helpers";
-import type { Gender, Person } from "@/lib/types";
+import { parentsOf, spousesOf } from "@/lib/helpers";
+import type { CoupleStatus, Gender, Person } from "@/lib/types";
 import { Field, GhostButton, inputCls, Modal, PrimaryButton, useAction, useToast } from "./ui";
 import { PersonPicker } from "./PersonPicker";
 import { GeezInput } from "./GeezInput";
+import { CoupleStatusField } from "./CoupleStatusField";
 
 const RELATION_OPTIONS = [
   { value: "child", label: "Child of" },
@@ -46,6 +47,7 @@ export function AddMemberModal({
   const [anchorId, setAnchorId] = useState<string>("");
   const [gender, setGender] = useState<Gender | "">("");
   const [secondParentId, setSecondParentId] = useState<string>("");
+  const [coupleStatus, setCoupleStatus] = useState<CoupleStatus | "">("");
   const [thisIsMe, setThisIsMe] = useState(false);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export function AddMemberModal({
       setKind("child");
       setGender("");
       setAnchorId(anchorPersonId ?? people[0]?.id ?? "");
+      setCoupleStatus("");
       // First person in an empty tree is usually the member themselves.
       setThisIsMe(!mePersonId && people.length === 0);
     }
@@ -72,6 +75,29 @@ export function AddMemberModal({
   useEffect(() => {
     if (open && kind === "child") setSecondParentId(anchorSpouseId);
   }, [open, kind, anchorId, anchorSpouseId]);
+
+  const existingParentId = useMemo(() => {
+    if (kind !== "parent" || !anchorId) return "";
+    return parentsOf(state.relationships, anchorId)[0] ?? "";
+  }, [kind, anchorId, state.relationships]);
+  const existingParent = people.find((p) => p.id === existingParentId) ?? null;
+  const secondParent = people.find((p) => p.id === secondParentId) ?? null;
+  const alreadySpouses = useMemo(() => {
+    if (!anchorId || !secondParentId) return false;
+    return spousesOf(state.relationships, anchorId).includes(secondParentId);
+  }, [state.relationships, anchorId, secondParentId]);
+
+  const coupleOtherId =
+    kind === "parent" ? existingParentId : kind === "child" ? secondParentId : "";
+  const coupleOther =
+    kind === "parent" ? existingParent : kind === "child" ? secondParent : null;
+  const showCouple =
+    !!coupleOther &&
+    ((kind === "parent" && !!existingParent) || (kind === "child" && !!secondParentId && !alreadySpouses));
+
+  useEffect(() => {
+    setCoupleStatus("");
+  }, [kind, anchorId, coupleOtherId]);
 
   const canConnect = people.length > 0;
 
@@ -99,6 +125,8 @@ export function AddMemberModal({
                 kind,
                 secondParentId:
                   kind === "child" && secondParentId ? secondParentId : undefined,
+                coupleWithPersonId: showCouple ? coupleOtherId : undefined,
+                coupleStatus: showCouple && coupleStatus ? coupleStatus : undefined,
               }
             : undefined,
       });
@@ -136,7 +164,7 @@ export function AddMemberModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (!name.trim()) return;
+          if (!name.trim() || (showCouple && !coupleStatus)) return;
           void submit();
         }}
         className="space-y-5"
@@ -246,6 +274,14 @@ export function AddMemberModal({
                 />
               </div>
             )}
+            {showCouple && coupleOther && (
+              <CoupleStatusField
+                aName={kind === "parent" ? name.trim() || "this person" : people.find((p) => p.id === anchorId)?.name ?? "them"}
+                bName={coupleOther.name}
+                value={coupleStatus}
+                onChange={setCoupleStatus}
+              />
+            )}
             <p className="mt-2.5 text-xs leading-relaxed text-stone-500">
               This creates {kind === "child" && secondParentId ? "connections" : "a connection"} the
               rest of the family can confirm. You can add more later.
@@ -285,7 +321,7 @@ export function AddMemberModal({
           <GhostButton type="button" onClick={onClose}>
             Cancel
           </GhostButton>
-          <PrimaryButton type="submit" disabled={!name.trim() || pending}>
+          <PrimaryButton type="submit" disabled={!name.trim() || pending || (showCouple && !coupleStatus)}>
             {pending ? "Adding…" : "Add to tree"}
           </PrimaryButton>
         </div>
