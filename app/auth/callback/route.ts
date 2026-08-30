@@ -46,10 +46,12 @@ export async function GET(request: Request) {
     return backToLogin("expired");
   }
 
-  // Nothing usable in the query string. It may still be an implicit-flow link,
-  // whose tokens ride in the URL fragment and never reach a server at all.
-  // Browsers keep the fragment across this redirect, so the sign-in page picks
-  // it up from there; if there is genuinely nothing, "the link was cut short"
-  // is by then the likely answer.
-  return backToLogin("link");
+  // Nothing usable in the query string — which for this project is the normal
+  // case, not the broken one. Supabase returns these links with the tokens in
+  // the URL fragment, and a fragment never reaches a server, so there is
+  // nothing here to act on and never was. Browsers do keep the fragment across
+  // a redirect, so hand over to a page that can read it.
+  return NextResponse.redirect(
+    `${origin}/auth/finish?next=${encodeURIComponent(next)}`
+  );
 }
