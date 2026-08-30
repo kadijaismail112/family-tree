@@ -8,6 +8,7 @@ import { Field, inputCls, PrimaryButton } from "@/components/ui";
 import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/safeNext";
+import { emailReturnUrl } from "@/lib/siteOrigin";
 
 /**
  * Why the emailed link didn't work, in terms of what to do about it. Each of
@@ -133,7 +134,9 @@ function LoginForm() {
       email,
       options: {
         // straight back to wherever they were headed, invite included
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        emailRedirectTo: emailReturnUrl(
+          `/auth/callback?next=${encodeURIComponent(next)}`
+        ),
         captchaToken: captcha,
       },
     });

@@ -5,6 +5,7 @@ import { AuthShell } from "@/components/AuthShell";
 import { Field, inputCls, PrimaryButton } from "@/components/ui";
 import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
+import { emailReturnUrl } from "@/lib/siteOrigin";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -19,7 +20,7 @@ export default function ForgotPasswordPage() {
     setError(null);
     const supabase = createClient();
     const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password`,
+      redirectTo: emailReturnUrl("/auth/callback?next=/auth/update-password"),
       captchaToken: captcha,
     });
     setBusy(false);

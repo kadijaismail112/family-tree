@@ -9,6 +9,7 @@ import { Turnstile } from "@/components/Turnstile";
 import { createClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/safeNext";
 import { CURRENT_CONSENT } from "@/lib/legal";
+import { emailReturnUrl } from "@/lib/siteOrigin";
 
 function SignupForm() {
   const router = useRouter();
@@ -28,6 +29,35 @@ function SignupForm() {
   const [accepted, setAccepted] = useState(false);
   const [captcha, setCaptcha] = useState<string | undefined>();
   const [captchaKey, setCaptchaKey] = useState(0);
+  const [resending, setResending] = useState(false);
+
+  /**
+   * The confirmation email is the step people get stuck on, and until now the
+   * only thing this page could do about it was tell them to go and look. A
+   * scanner can spend the link before they open it, and spam filters exist.
+   */
+  const resend = async () => {
+    setResending(true);
+    setError(null);
+    const supabase = createClient();
+    const { error: err } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: emailReturnUrl(
+          `/auth/callback?next=${encodeURIComponent(next)}`
+        ),
+        captchaToken: captcha,
+      },
+    });
+    setResending(false);
+    setCaptchaKey((k) => k + 1);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setInfo("Another confirmation link is on its way — the newest one is the one that works.");
+  };
 
   const submit = async () => {
     // The button is disabled without this, but a form can still be submitted
@@ -40,12 +70,13 @@ function SignupForm() {
     setError(null);
     setInfo(null);
     const supabase = createClient();
-    const origin = window.location.origin;
     const { data, error: err } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        emailRedirectTo: emailReturnUrl(
+          `/auth/callback?next=${encodeURIComponent(next)}`
+        ),
         // The checkbox gates the button; this is what makes the answer
         // durable. handle_new_user() turns the flag into a server-clock
         // timestamp on the profile, so there is an actual record that this
@@ -166,7 +197,19 @@ function SignupForm() {
           <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</p>
         )}
         {info && (
-          <p className="rounded-xl bg-teal-800/5 px-3.5 py-2.5 text-sm text-teal-900">{info}</p>
+          <>
+            <p className="rounded-xl bg-teal-800/5 px-3.5 py-2.5 text-sm leading-relaxed text-teal-900">
+              {info}
+            </p>
+            <button
+              type="button"
+              onClick={() => void resend()}
+              disabled={resending || !email}
+              className="w-full rounded-xl border border-teal-700/30 bg-white px-3.5 py-2.5 text-sm font-semibold text-teal-800 transition hover:bg-teal-800/5 disabled:opacity-50"
+            >
+              {resending ? "Sending…" : "Didn't arrive? Send it again"}
+            </button>
+          </>
         )}
         <Turnstile onToken={setCaptcha} resetKey={captchaKey} />
         <PrimaryButton
