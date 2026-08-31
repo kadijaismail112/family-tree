@@ -5,7 +5,7 @@ import { useStore } from "@/lib/store";
 import { fileToDataUrl, timeAgo, userName } from "@/lib/helpers";
 import type { DetailKey, Person, PersonPhoto } from "@/lib/types";
 import { PERSON_DETAIL_FIELDS } from "@/lib/types";
-import { Avatar, GhostButton, inputCls, Modal, PrimaryButton, useToast } from "./ui";
+import { Avatar, GhostButton, inputCls, Modal, PrimaryButton, useToast, DangerIconButton} from "./ui";
 import { CityInput } from "./CityInput";
 import { GALLERY_PHOTOS_ENABLED } from "@/lib/features";
 
@@ -215,29 +215,29 @@ export function PersonExtras({
                   <dt className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
                     {f.label}
                   </dt>
-                  <span className="flex gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                  <span className="flex items-center gap-1.5 opacity-100 transition sm:gap-0.5 sm:opacity-0 sm:group-hover:opacity-100">
                     <button
                       onClick={() => setEditing(f.key)}
                       aria-label={`Edit ${f.label}`}
-                      className="rounded p-1 text-stone-400 hover:bg-stone-200 hover:text-stone-600"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-200 hover:text-stone-600 sm:h-7 sm:w-7"
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                       </svg>
                     </button>
-                    <button
-                      onClick={() => {
+                    <DangerIconButton
+                      label={`Remove ${f.label}`}
+                      confirmLabel={`Tap again to remove ${f.label}`}
+                      onConfirm={() => {
                         void setPersonDetail(person.id, f.key, null).catch((err) =>
                           toast(err instanceof Error ? err.message : "Couldn't remove that", "error")
                         );
                       }}
-                      aria-label={`Remove ${f.label}`}
-                      className="rounded p-1 text-stone-400 hover:bg-red-50 hover:text-red-600"
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <path d="M6 6l12 12M18 6L6 18" />
                       </svg>
-                    </button>
+                    </DangerIconButton>
                   </span>
                 </div>
                 <dd className="mt-0.5 text-sm leading-snug text-stone-700">
@@ -280,19 +280,19 @@ export function PersonExtras({
                       <span className="font-normal text-stone-400">· {timeAgo(c.createdAt)}</span>
                     </span>
                     {c.userId === currentUser?.id && (
-                      <button
-                        onClick={() => {
+                      <DangerIconButton
+                        label="Delete comment"
+                        confirmLabel="Tap again to delete this comment"
+                        onConfirm={() => {
                           void removeComment(c.id).catch((err) =>
                             toast(err instanceof Error ? err.message : "Couldn't delete that", "error")
                           );
                         }}
-                        aria-label="Delete comment"
-                        className="rounded p-1.5 text-stone-400 opacity-100 transition hover:bg-red-50 hover:text-red-600 sm:p-1 sm:text-stone-300 sm:opacity-0 sm:group-hover:opacity-100"
                       >
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                           <path d="M6 6l12 12M18 6L6 18" />
                         </svg>
-                      </button>
+                      </DangerIconButton>
                     )}
                   </div>
                   <p className="mt-1 text-sm leading-snug text-stone-700">{c.text}</p>
@@ -724,15 +724,15 @@ function VoiceRow({ url, onRemove }: { url: string; onRemove: () => void }) {
         Hear their name
       </button>
       <audio ref={audioRef} src={url} onEnded={() => setPlaying(false)} className="hidden" />
-      <button
-        onClick={onRemove}
-        aria-label="Remove recording"
-        className="rounded p-1.5 text-stone-400 opacity-100 transition hover:bg-red-50 hover:text-red-600 sm:p-1 sm:text-stone-300 sm:opacity-0 sm:group-hover:opacity-100"
+      <DangerIconButton
+        label="Remove recording"
+        confirmLabel="Tap again to remove the recording"
+        onConfirm={onRemove}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M6 6l12 12M18 6L6 18" />
         </svg>
-      </button>
+      </DangerIconButton>
     </div>
   );
 }

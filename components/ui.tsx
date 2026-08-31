@@ -313,6 +313,60 @@ export function Avatar({
   );
 }
 
+/* ─── Two-step destructive icon button ──────────────────────────────── */
+
+/**
+ * The same arm-then-confirm as DangerButton, at icon size.
+ *
+ * These controls used to be revealed by hover, which meant they did not
+ * exist on a phone — you could add a detail or a comment there and never be
+ * able to remove it. Simply showing them was worse: an 11px delete sitting
+ * two pixels from Edit, firing immediately, with nothing to undo it. So they
+ * are visible on touch, big enough to hit on purpose, and they ask twice.
+ */
+export function DangerIconButton({
+  label,
+  confirmLabel,
+  onConfirm,
+  children,
+}: {
+  label: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  children: React.ReactNode;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [armed]);
+
+  return (
+    <button
+      type="button"
+      aria-label={armed ? confirmLabel : label}
+      title={armed ? confirmLabel : label}
+      onClick={() => {
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
+        onConfirm();
+      }}
+      onBlur={() => setArmed(false)}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition sm:h-7 sm:w-7 ${
+        armed
+          ? "bg-red-600 text-white ring-2 ring-red-300"
+          : "text-stone-400 hover:bg-red-50 hover:text-red-600 sm:text-stone-300"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 /* ─── Two-step destructive button ───────────────────────────────────── */
 
 export function DangerButton({
