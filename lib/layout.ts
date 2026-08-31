@@ -2,7 +2,17 @@ import type { Person, Relationship } from "./types";
 
 export const NODE_W = 190;
 export const NODE_H = 82;
-export const X_GAP = 60; // between units in a row
+export const X_GAP = 60; // between siblings — units sharing a parent
+/**
+ * Between two units in the same row that do not share a parent.
+ *
+ * One gap for everybody meant a cousin sat exactly as close to you as your
+ * own brother, and by the third generation down a row is mostly cousins:
+ * twenty cards in an even line with nothing saying where one family stops
+ * and the next begins. Spacing the gap by relationship puts the whitespace
+ * where the meaning already is.
+ */
+export const FAMILY_GAP = 168;
 export const COUPLE_GAP = 24; // between spouses (or co-parents) in a unit
 const Y_GAP = 110;
 const COMPONENT_GAP = 160;
@@ -249,6 +259,34 @@ export function layoutTree(
       if (r.type === "PARENT_OF") parentsOf.get(r.toPersonId)!.push(r.fromPersonId);
     }
 
+    /**
+     * How much air to leave between two neighbours in a row: the ordinary
+     * gap for siblings, a wider one for people from different families.
+     * Units hold one person or a couple, so a unit's "family" is every
+     * parent its members have between them.
+     */
+    const familyOf = new Map<Unit, string[]>();
+    const parentsOfUnit = (u: Unit) => {
+      let ps = familyOf.get(u);
+      if (!ps) {
+        ps = u.members.flatMap((m) => parentsOf.get(m) ?? []);
+        familyOf.set(u, ps);
+      }
+      return ps;
+    };
+    const gapBetween = (a: Unit, b: Unit) => {
+      // A co-parent pinned to a couple is deliberately held at that couple's
+      // side; widening this would undo the pinning it exists to do.
+      if (satelliteOf.get(a)?.hub === b || satelliteOf.get(b)?.hub === a) {
+        return X_GAP;
+      }
+      const pa = parentsOfUnit(a);
+      if (!pa.length) return FAMILY_GAP;
+      const pb = parentsOfUnit(b);
+      if (!pb.length) return FAMILY_GAP;
+      return pa.some((p) => pb.includes(p)) ? X_GAP : FAMILY_GAP;
+    };
+
     const maxGen = Math.max(...compIds.map((id) => gen.get(id)!));
     const rows: Unit[][] = [];
     for (let g = 0; g <= maxGen; g++) {
@@ -314,10 +352,10 @@ export function layoutTree(
       );
       rows[g] = scored.flatMap((x) => x.block);
       let cursor = 0;
-      for (const u of rows[g]) {
+      rows[g].forEach((u, i) => {
         u.x = cursor + u.width / 2;
-        cursor = u.x + u.width / 2 + X_GAP;
-      }
+        cursor = u.x + u.width / 2 + (i + 1 < rows[g].length ? gapBetween(u, rows[g][i + 1]) : 0);
+      });
     }
 
     // Pull each unit toward the people it's connected to, keeping row order
@@ -325,9 +363,9 @@ export function layoutTree(
     // the connections wanted it. Alternating up/down passes settles parents
     // over their children and children under their parents.
     const rightOf = (left: Unit, u: Unit) =>
-      left.x + left.width / 2 + X_GAP + u.width / 2;
+      left.x + left.width / 2 + gapBetween(left, u) + u.width / 2;
     const leftOf = (right: Unit, u: Unit) =>
-      right.x - right.width / 2 - X_GAP - u.width / 2;
+      right.x - right.width / 2 - gapBetween(right, u) - u.width / 2;
     const spaceOut = (row: Unit[]) => {
       for (let i = 1; i < row.length; i++) {
         const min = rightOf(row[i - 1], row[i]);

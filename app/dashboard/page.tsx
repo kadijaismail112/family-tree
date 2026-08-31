@@ -99,20 +99,27 @@ export default function DashboardPage() {
       </header>
 
       <div className="mx-auto max-w-5xl px-6 py-10">
-        {/* ── Profile header ── */}
-        <div className="flex flex-wrap items-center gap-5">
-          <Avatar name={currentUser.name} id={currentUser.id} size={72} />
-          <div className="min-w-0 flex-1">
-            <h1 className="font-display text-3xl font-semibold tracking-tight text-stone-900">
-              {currentUser.name}
-            </h1>
-            <p className="mt-1 text-stone-500">
-              {profile.totalRelatives} recorded {profile.totalRelatives === 1 ? "relative" : "relatives"}{" "}
-              across {profile.families.length}{" "}
-              {profile.families.length === 1 ? "family tree" : "family trees"}
-            </p>
+        {/* ── Profile header ──
+            One row from `sm` up. On a phone the name sits beside the avatar
+            and everything else goes underneath: `flex-1` on the text block
+            used to let it shrink to a ~140px column while the button held its
+            width, wrapping "13 recorded relatives across 1 family tree" onto
+            five lines as the first thing a new relative ever saw. */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
+          <div className="flex min-w-0 items-center gap-4 sm:flex-1 sm:gap-5">
+            <Avatar name={currentUser.name} id={currentUser.id} size={72} />
+            <div className="min-w-0 flex-1">
+              <h1 className="font-display text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
+                {currentUser.name}
+              </h1>
+              <p className="mt-1 text-sm text-stone-500 sm:text-base">
+                {profile.totalRelatives} recorded {profile.totalRelatives === 1 ? "relative" : "relatives"}{" "}
+                across {profile.families.length}{" "}
+                {profile.families.length === 1 ? "family tree" : "family trees"}
+              </p>
+            </div>
           </div>
-          <div className="flex gap-2.5">
+          <div className="flex gap-2.5 [&>*]:flex-1 sm:[&>*]:flex-none">
             <PrimaryButton onClick={() => setCreateOpen(true)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <path d="M12 5v14M5 12h14" />

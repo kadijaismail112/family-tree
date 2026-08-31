@@ -584,10 +584,14 @@ function CanvasInner({
       proOptions={{ hideAttribution: true }}
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="#d6d3d1" />
+      {/* Bottom-left on a phone, above the view tabs. Pinned top-left it sat
+          under the Clusters overlay and covered a card-sized piece of tree in
+          the corner a thumb cannot reach anyway; down here it collides with
+          nothing and is actually reachable one-handed. */}
       <Controls
         showInteractive={false}
         position="top-left"
-        className="!left-3 !top-3 sm:!bottom-4 sm:!left-auto sm:!right-4 sm:!top-auto"
+        className="!bottom-[calc(4.75rem+env(safe-area-inset-bottom))] !left-3 !top-auto sm:!bottom-4 sm:!left-auto sm:!right-4 sm:!top-auto"
       />
       {/* The detail panel opens over the top-right corner, so a minimap
           pinned there was invisible for as long as anyone was actually

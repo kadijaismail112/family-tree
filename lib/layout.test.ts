@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COUPLE_GAP, layoutTree, NODE_W, X_GAP } from "./layout";
+import { COUPLE_GAP, FAMILY_GAP, layoutTree, NODE_W, X_GAP } from "./layout";
 import type { Person, RelationKind, Relationship, RelationType } from "./types";
 
 let seq = 0;
@@ -94,5 +94,53 @@ describe("unmarried co-parents sit together", () => {
     const right = Math.max(mom.x, other.x);
     expect(uncle.x > left && uncle.x < right).toBe(false);
     expect(husband.x > left && husband.x < right).toBe(false);
+  });
+});
+
+describe("families get more air between them than siblings do", () => {
+  /**
+   * Two sets of cousins on one row. Before, every neighbour was X_GAP apart,
+   * so a cousin sat exactly as close as a brother and a wide row read as one
+   * undifferentiated line of children.
+   */
+  const people = [
+    person("gpa", "Grandpa"),
+    person("a", "Parent A"),
+    person("b", "Parent B"),
+    person("a1", "A one"),
+    person("a2", "A two"),
+    person("b1", "B one"),
+    person("b2", "B two"),
+  ];
+  const rels = [
+    rel("gpa", "a", "PARENT_OF", "biological"),
+    rel("gpa", "b", "PARENT_OF", "biological"),
+    rel("a", "a1", "PARENT_OF", "biological"),
+    rel("a", "a2", "PARENT_OF", "biological"),
+    rel("b", "b1", "PARENT_OF", "biological"),
+    rel("b", "b2", "PARENT_OF", "biological"),
+  ];
+  const at = layoutTree(people, rels);
+  const x = (id: string) => at.get(id)!.x;
+
+  it("keeps siblings at the ordinary gap", () => {
+    expect(gapBetween(x("a1"), x("a2"))).toBeCloseTo(NODE_W + X_GAP, 0);
+    expect(gapBetween(x("b1"), x("b2"))).toBeCloseTo(NODE_W + X_GAP, 0);
+  });
+
+  it("opens a wider gap where one family ends and the next begins", () => {
+    const inner = Math.min(
+      gapBetween(x("a2"), x("b1")),
+      gapBetween(x("a1"), x("b1")),
+      gapBetween(x("a2"), x("b2"))
+    );
+    expect(inner).toBeGreaterThan(NODE_W + X_GAP);
+    // and by the full family gap, not merely a little more
+    expect(inner).toBeGreaterThanOrEqual(NODE_W + FAMILY_GAP - 1);
+  });
+
+  it("leaves the cousins' rows in the same order", () => {
+    expect(x("a1")).toBeLessThan(x("b1"));
+    expect(x("a2")).toBeLessThan(x("b1"));
   });
 });

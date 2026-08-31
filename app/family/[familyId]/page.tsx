@@ -310,7 +310,7 @@ export default function FamilyPage() {
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
               placeholder="Find someone…"
-              className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-stone-400 focus:border-teal-600 focus:bg-white focus:ring-2 focus:ring-teal-600/15"
+              className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-3 text-base outline-none transition placeholder:text-stone-400 focus:border-teal-600 focus:bg-white focus:ring-2 focus:ring-teal-600/15 sm:text-sm"
             />
             {searchFocused && searchResults.length > 0 && (
               <ul className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
@@ -486,7 +486,7 @@ export default function FamilyPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Find someone by name, city, college…"
-              className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm outline-none transition placeholder:text-stone-400 focus:border-teal-600 focus:bg-white"
+              className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-base outline-none transition placeholder:text-stone-400 focus:border-teal-600 focus:bg-white sm:text-sm"
             />
             <button
               type="button"
@@ -627,50 +627,56 @@ export default function FamilyPage() {
           </div>
         )}
 
-        {/* Shown on every visit, not once: this warns that what's on screen
-            may be wrong, and that stays true however many times you've seen it. */}
-        {viewMode === "clusters" && clustersHint && (
-          <div className="absolute inset-x-3 top-3 z-10 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:inset-x-auto sm:left-4 sm:right-4 sm:max-w-md">
-            <p className="min-w-0 text-xs leading-relaxed text-amber-900">
-              Clusters is in beta — grouping can be rough where details are
-              half filled in. Nothing here changes your tree.
-            </p>
-            <button
-              type="button"
-              onClick={() => setClustersHint(false)}
-              className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-amber-900"
-            >
-              OK
-            </button>
-          </div>
-        )}
-
-        {/* Cluster-by picker */}
+        {/* Beta notice and the cluster-by picker, stacked in one column.
+            They used to be positioned independently, with the picker pushed
+            down by a hardcoded top-16 to clear the notice. That guess held at
+            desktop width and failed on a phone, where the notice wraps to
+            three lines and the picker landed on top of it — covering the end
+            of the sentence it was warning you with. Stacking them removes the
+            guess: the picker sits below whatever height the notice takes. */}
         {viewMode === "clusters" && (
-          <div className={`absolute left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-2.5 py-1.5 shadow-sm backdrop-blur sm:left-4 sm:px-3 sm:py-2 ${
-              clustersHint ? "top-16 sm:top-20" : "top-3 sm:top-4"
-            }`}>
-            <span className="hidden text-xs font-semibold uppercase tracking-wider text-stone-400 sm:inline">
-              Cluster by
-            </span>
-            <select
-              value={clusterKey}
-              onChange={(e) => setClusterKey(e.target.value as ClusterKey)}
-              className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm font-medium text-stone-800 outline-none transition focus:border-teal-600"
-            >
-              {CLUSTER_OPTIONS.map((o) => (
-                <option key={o.key} value={o.key}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setClusterModal({ mode: "create" })}
-              className="shrink-0 rounded-lg bg-teal-800 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700"
-            >
-              Create cluster
-            </button>
+          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-col items-start gap-2 sm:inset-x-4 sm:top-4">
+            {/* Shown on every visit, not once: this warns that what's on screen
+                may be wrong, and that stays true however many times you've seen it. */}
+            {clustersHint && (
+              <div className="pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:max-w-md">
+                <p className="min-w-0 text-xs leading-relaxed text-amber-900">
+                  Clusters is in beta — grouping can be rough where details are
+                  half filled in. Nothing here changes your tree.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setClustersHint(false)}
+                  className="-my-1 shrink-0 rounded-lg px-2 py-2 text-xs font-semibold text-amber-900"
+                >
+                  OK
+                </button>
+              </div>
+            )}
+
+            <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-2.5 py-1.5 shadow-sm backdrop-blur sm:px-3 sm:py-2">
+              <span className="hidden text-xs font-semibold uppercase tracking-wider text-stone-400 sm:inline">
+                Cluster by
+              </span>
+              <select
+                value={clusterKey}
+                onChange={(e) => setClusterKey(e.target.value as ClusterKey)}
+                className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-base font-medium text-stone-800 outline-none transition focus:border-teal-600 sm:text-sm"
+              >
+                {CLUSTER_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setClusterModal({ mode: "create" })}
+                className="shrink-0 rounded-lg bg-teal-800 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700"
+              >
+                Create cluster
+              </button>
+            </div>
           </div>
         )}
 

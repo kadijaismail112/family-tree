@@ -215,7 +215,7 @@ export function PersonExtras({
                   <dt className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
                     {f.label}
                   </dt>
-                  <span className="flex gap-0.5 opacity-0 transition group-hover:opacity-100">
+                  <span className="flex gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                     <button
                       onClick={() => setEditing(f.key)}
                       aria-label={`Edit ${f.label}`}
@@ -287,7 +287,7 @@ export function PersonExtras({
                           );
                         }}
                         aria-label="Delete comment"
-                        className="rounded p-1 text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                        className="rounded p-1.5 text-stone-400 opacity-100 transition hover:bg-red-50 hover:text-red-600 sm:p-1 sm:text-stone-300 sm:opacity-0 sm:group-hover:opacity-100"
                       >
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                           <path d="M6 6l12 12M18 6L6 18" />
@@ -727,7 +727,7 @@ function VoiceRow({ url, onRemove }: { url: string; onRemove: () => void }) {
       <button
         onClick={onRemove}
         aria-label="Remove recording"
-        className="rounded p-1 text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+        className="rounded p-1.5 text-stone-400 opacity-100 transition hover:bg-red-50 hover:text-red-600 sm:p-1 sm:text-stone-300 sm:opacity-0 sm:group-hover:opacity-100"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M6 6l12 12M18 6L6 18" />

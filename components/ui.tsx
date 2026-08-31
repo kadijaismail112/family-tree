@@ -127,8 +127,17 @@ export function Field({
   );
 }
 
+/**
+ * 16px on a phone, 14px from `sm` up.
+ *
+ * Safari zooms the page whenever a field smaller than 16px takes focus, and
+ * it does not zoom back out — so the first tap on the sign-in form left
+ * everyone magnified and scrolled sideways, with the submit button off the
+ * edge. The desktop size is unchanged; only the phone gets the bigger text,
+ * which is the size it needed anyway.
+ */
 export const inputCls =
-  "w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15";
+  "w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-base text-stone-900 placeholder:text-stone-400 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 sm:text-sm";
 
 /**
  * A row of buttons instead of a `<select>` for the short, closed choices.
@@ -481,7 +490,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="pointer-events-none fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
+      {/* Clear of the family view's bottom tabs on a phone, which this used to
+          sit directly on top of — an error toast blocked navigation until it
+          timed out. Above `sm` there are no bottom tabs, so it stays low. */}
+      <div className="pointer-events-none fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2 sm:bottom-5">
         {toasts.map((t) => (
           <div
             key={t.id}
